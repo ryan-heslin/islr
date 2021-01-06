@@ -1,0 +1,482 @@
+---
+title: "Presidential Platforms 1968-2020: A Text Analysis"
+author: "Ryan Heslin"
+date: "1/5/21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this analysis, I download and analyze Republcian and Democratic presidential paltforms going back to 1968. I use visualizations and text analysis to determine how and wehter they vary by party and year.
+
+I am indebted to _Text Mining with R_, which explains many of the methods I use. Available here: https://www.tidytextmining.com/
+
+I start with a plotting theme
+```{r}
+library(tidyverse)
+library(tidytext)
+library(broom)
+library(rvest)
+theme_platforms <- theme(
+  panel.background = element_blank(),
+  panel.border = element_rect(color = "black", fill = NA),
+  panel.grid = element_blank(),
+  panel.grid.major.x = element_line(color = "gray93"),
+  legend.background = element_rect(fill = "gray93"),
+  plot.title = element_text(size = 15, family = "sans", face = "bold", vjust = 1.3),
+  plot.title.position = "plot",
+  plot.subtitle = element_text(size = 10, family = "sans"),
+  legend.title = element_text(size = 10, family = "sans", face = "bold"),
+  axis.title = element_text(size = 9, family = "sans", face = "bold"),
+  axis.text = element_text(size = 8, family = "sans"), 
+  strip.background = element_rect(color = "black", fill = "black"),
+  strip.text.x = element_text(color ="white"),
+  strip.text.y = element_text(color = "white")
+)
+theme_set(theme_platforms)
+```
+
+
+After identifying a website with platforms, I download them. For no evident reason, the URLS don't have a consistent order of words: some years the party name comes before the year, others the reverse. I have to manually correct some URLS.
+```{r, cache = TRUE}
+
+repubs<- paste0("https://www.presidency.ucsb.edu/documents/republican-party-platform-", seq(1968, 2020, by = 4))
+dems <- paste0("https://www.presidency.ucsb.edu/documents/", seq(1968, 2020, by = 4), "-democratic-party-platform")
+urls <- c(repubs, dems)
+
+urls[c(9,10,11,12,13,14)] <- map_chr(c(9,10,11, 12,13,14), ~str_replace(urls[.x], "([a-z-]+)-(\\d{4})", "\\2-\\1"))
+urls[14] <- str_replace(urls[14], "\\d.*", "resolution-regarding-the-republican-party-platform")
+raw <- map(urls, read_html) %>%
+  map(html_nodes, "body") %>% 
+  map(html_text)
+```
+
+
+I parse the raw text line by line and create tibbles by sentence and word. Since in 2020 the Republicans did not adopt a new platform, I drop the Republicans for that year. I decided that this was less disruptive than double-counting the 2016 platform or dropping the 2020 Democrats as well.
+```{r, cache = TRUE, message = FALSE}
+by_word <-raw[-14] %>%  map(~str_extract_all(.x, regex("^[:alpha:].*?[[:punct:]-[)]]$", multiline = TRUE))) %>% 
+  map(unlist) %>% 
+  map(~str_extract_all(.x, "[A-Z].*?\\.(?<![A-Z]\\.|\\?|!)")) %>% 
+  map(unlist) %>% 
+  map(enframe, name = "sen_number", value = "sentence") %>% 
+  map(~unnest_tokens(tbl = .x, output = word, input = sentence, token = "words", drop = FALSE)) %>% 
+  map(~anti_join(.x, stop_words, by = "word")) %>% 
+  map(~filter(.x, !str_detect(word, "[\\d,.]+"))) %>% #get rid of numbers
+  map(mutate, sen_number = as.numeric(as_factor(sentence))) %>% #renumber
+  map(mutate, number = row_number(),
+      across(c(word, sentence), as_factor)) %>% 
+  setNames(c(paste0("R", seq(1968, 2016, by = 4)), paste0("D", seq(1968, 2020, by = 4))))
+
+#Recreate sentences after filtering stops
+by_sentence <- by_word %>% map(~group_by(.x, sentence)) %>% 
+  map(~summarize(.x, sentence = paste(word, collapse = " "))) %>% 
+  map(ungroup) %>% 
+  map(mutate, number = row_number())
+
+by_word <- by_word %>% map(~dplyr::select(.x, -sentence)) %>% 
+  imap(~left_join(.x, by_sentence[[.y]], by = c("sen_number"="number")))
+
+overall <- by_word %>% bind_rows(.id = "party_year") %>%
+  mutate(party = str_extract(party_year, "[A-Z]"),
+         year = as.numeric(str_extract(party_year, "\\d{4}")))
+
+```
+
+# Exploratory Plotting
+
+Each year's most common word is typically fairly generic, with the exception of "Clinton" for the Republicans in 1996.
+
+```{r}
+
+platform_scale <- c(D = "blue", R = "red")
+overall %>% count(party, year, word) %>% 
+  group_by(party, year) %>% 
+  slice_max(order_by = n, n = 1) %>% 
+  ggplot()+
+  geom_label(aes(x = 1, y=1, label = word, fill = party), col = "white", size = 3) +
+  scale_fill_manual(values = platform_scale) +
+  labs(title = "Most Common Word by Party and Year") +
+  facet_grid(year ~ party, switch = "y") +
+  theme(axis.text = element_blank(), axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        strip.text.y = element_text(angle =90, size = 6),
+        panel.background = element_rect(fill ="beige"),
+        legend.position = "none")
+
+```
+\n
+I turn to the related question of how word count varies by year.
+```{r}
+year_scale <- partial(scale_x_continuous, breaks = seq(1968, 2020, by = 4),...=)
+
+overall %>% count(party, year) %>% 
+ggplot(aes(x = year, y = n, col = party))+
+  year_scale()+
+  geom_line()+
+  geom_point()+
+  scale_color_manual(values = platform_scale) +
+  labs(title = "Word Count by Year and Party", color = "Party", x = "Year", y = "Count")
+  
+```
+\n
+Term frequency-inverse document frequency measures a term's commonness in one document relative to others
+The terms with the highest TF-IDF were mostly the names of one of the two candidates, either from the same party or the opposing one. This makes sense; those names would only be topical in one election cycle The "cent" in the Democratic platform of 1976 comes from rendering "percent" as two words.
+No idea why 2008 for Republicans is "lawyers," however.
+```{r}
+overall %>%
+  count(word, party_year) %>% 
+  bind_tf_idf(term = word, document = party_year,n=n) %>% 
+  group_by(party_year) %>% 
+  slice_max(order_by =tf_idf, n = 1) %>% 
+  arrange(party_year) %>% 
+  knitr::kable()
+```
+
+Some surprising variation in word frequency rank distribution, with the longer platforms having more variety.
+```{r}
+overall %>% mutate(across(c(party, year), as.factor)) %>% 
+  group_by(party_year) %>% 
+  add_count(word) %>% 
+  mutate(freq = n/n(),
+         rank = rank(-freq)) %>% 
+  ungroup() %>% arrange(desc(freq)) %>% 
+  ggplot(aes(x = rank, y = freq, col = year)) +
+  geom_line()+
+  facet_grid(party ~ ., scales = "free_x") +
+  scale_y_log10(labels = scales::label_number()) +
+  labs(title = "Word Frequency Rank by Year", x = "Rank", y = "Word Frequency (log10)", color = "Year")
+  
+```
+
+# Sentiment Analysis
+
+Sentiment analysis associates words, sentences, or other tokens with positive or negative sentiment, coded as either a binary or ordinal representation. I will use the AFINN lexicon, which scores sentiment from -5 (most negative) to 5 (most positive).
+
+Average sentiment in most party-years was mildly positive, with none above 1. The outlier is 1972, with a far more positive Republican than Democratic platform. That is not what we'd expect from a comparison of second-term Nixon and George McGovern, which might indicate a problem with the approach.
+```{r}
+library(lubridate)
+word_sentiments <- overall %>% 
+  inner_join(get_sentiments("afinn"))
+
+sent_sentiments <- word_sentiments %>% 
+  group_by(party, year, sentence) %>% 
+  summarize(`AFINN Mean` = mean(value)) %>% 
+  mutate(sen_number =seq_len(n())) %>% 
+  ungroup()
+
+sent_means <- sent_sentiments %>% group_by(party, year) %>% 
+  summarize(`AFINN Mean` = mean(`AFINN Mean`)) %>% 
+  ungroup()
+sent_means %>% 
+  mutate(year = fct_rev(fct_inseq(as_factor(year)))) %>% 
+  ggplot(aes(x = year, y =`AFINN Mean`, fill = party)) +
+  geom_col()+
+  scale_fill_manual(values = platform_scale) +
+  coord_flip()+
+  facet_grid( . ~ party)
+  
+```
+\n
+The difference in means by party is nowhere near significant, however.
+```{r}
+word_sentiments %>% filter(year != "2020") %>% 
+t.test(value ~ party, data = ., alternative = "two.sided", var.eqal = FALSE) %>% 
+  tidy() %>% 
+  knitr::kable()
+```
+In most years, the Republican platform was more positive overall.
+```{r}
+sent_means %>% 
+  group_by(year) %>% 
+  summarize(diff = `AFINN Mean`[party == "D"] - `AFINN Mean`[party == "R"]) %>% 
+  ggplot(aes(x = fct_reorder(factor(year), rev(sort(year))), y = diff, fill = factor(year))) +
+  geom_col()+
+  geom_hline(yintercept = 0, col = "black") +
+  ylim(c(-.5, .5))+
+  coord_flip()+
+  labs(title = "Democratic - Republican Mean Sentiment by Year", x = "Year", y = "Difference") +
+  theme(legend.position = "none")
+```
+\n
+Let's compare the sentence-by-sentence sentiment of the platforms in 1972, the year of greatest difference. For each sentence, I take the mean of the AFINN scores for each word to establish an average sentiment. This is easy enough, though it underrates the importance of long sentences. Here, it seems the Democratic platform has more varying sentiment.
+
+It also seems no sentence in one platform ever recurs in another.
+```{r}
+
+agg <- 10
+sent_sentiments %>% 
+  mutate(sen_number = (sen_number %/% agg) +1) %>% 
+  group_by(sen_number, party, year) %>% 
+  summarize(`AFINN Mean` = mean(`AFINN Mean`)) %>% 
+  ungroup() %>% 
+  filter(year == 1972) %>% 
+  ggplot(aes(x = sen_number, y = `AFINN Mean`,col = factor(party))) +
+  geom_line()+
+  scale_color_manual(values = platform_scale) +
+  geom_hline(yintercept = 0, linetype = "dashed")+
+  facet_grid(rows = party ~ .) +
+  labs(title = "Chunked Sentiment by Party for 1972", x = "10-Sentence Chunk") +
+  theme(legend.position = "none")
+  
+```
+\n
+Which passages had the most extreme sentiment scores? I filter for the highest and lowest AFINN score means. The most negative passage of all castigates Bill Clinton for vetoing the partial abortion ban; the most positive seems to be a 1984 section extolling Reagan's policy successes. Overall, the coding scheme seems sound.
+```{r}
+sent_sentiments %>% 
+  mutate(sen_number = (sen_number %/% agg) +1) %>% 
+  group_by(sen_number, party, year) %>% 
+  summarize(sen_number = unique(sen_number), sentence = paste(sentence, collapse = " "), `AFINN Mean` = mean(`AFINN Mean`)) %>% 
+  ungroup() %>% 
+  group_by(year) %>% 
+  filter(`AFINN Mean` %in% range(`AFINN Mean`[year==year])) %>% 
+  arrange(-abs(`AFINN Mean`)) %>% 
+  dplyr::select(`AFINN Mean`, everything())
+  
+```
+What fraction of words in each platform is positive? In incumbent years, it seems the party defending the White House adopts a more positive tone than the challenging party. Note the 
+```{r}
+word_sentiments %>% mutate(value = ifelse(value <=0, 0, 1)) %>% 
+  group_by(year, party) %>% 
+  summarize(`Proportion Positive` = mean(value)) %>% 
+  mutate(mins = c(pmin(`Proportion Positive`[party == "R"], `Proportion Positive`[party == "D"]), NA),
+          maxes =c(pmax(`Proportion Positive`[party == "R"], `Proportion Positive`[party == "D"]), NA)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = year, y = `Proportion Positive`, col = party))+
+  scale_color_manual(values = platform_scale)+
+  geom_errorbar(aes(xend = year, ymin =mins, ymax = maxes), col = "navajowhite", width = 3, size = .75)+
+  geom_point() +
+  scale_x_continuous(breaks = seq(1968, 2020, by =4)) +
+  geom_line()+
+  ylim(c(0, .8)) +
+  labs(title = "Proportion Positive by Party and Year", x = "Year", y = "Proprotion of Words Positive", col = "Party")
+```
+
+ If we split platforms by the party defending and compare mean sentiments, they are almost identical, consistent with the party's defending/contesting position determining its stance.
+```{r}
+d_defend <- c(1968, 1980, 1996, 2000, 2012, 2016)
+r_defend <- setdiff(overall$year, d_defend)
+by_defender <- word_sentiments %>% mutate(value = ifelse(value <=0, 0, 1),
+                           defender = if_else(year %in% d_defend, "Democrat", "Republican") %>% 
+                             as_factor())
+
+by_defender %>% group_by(defender) %>% 
+  summarize(`Proportion Positive` = mean(value)) %>% 
+  ggplot(aes(x = defender, y = `Proportion Positive`, fill = defender))+
+  geom_col() +
+  scale_fill_manual(values = set_names(platform_scale, nm = NULL)) +
+  scale_x_discrete(expand = c(0, .75))+
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Proportion Positive by Party Defending", x= "Defending Party", y = "Proportion Positive", fill = "Defending Party") +
+  theme(legend.position = "none")
+```
+Mean positivity for defending parties was about 4% higher than for challengers. A difference-of-means test confirms the difference is significant, though it's not particularly substantial.
+```{r}
+by_defender %>% mutate(challenging = if_else((defender == "Republican" & party == "D") |defender == "Democrat" & party == "R",
+                                             "Challenging", "Defending") %>% as_factor()) %>% 
+  t.test(data = ., value ~ challenging, alternative = "less",  var.equal = FALSE)
+```
+I run a pairwise ANOVA comparing all 182 year pairs (counting just the Democrats for 2020) and plot the results. With the large number of comparisons, we likely had some false significant results, but it remains a useful exercise. Some years had noticeably more differences with regard to other years; 2004, especially, seems highly atypical. My method of creating the data plot was to bind the ANOVA results dataframe to itself with the year column names swapped, which I feel lies exactly on the boundary between "clever" and "stupid."  
+```{r}
+anov <- word_sentiments %>% mutate(year = fct_reorder(factor(year), rev(sort(year)))) %>% 
+  aov(data =., value ~ year)
+summary(anov)
+
+tab <- TukeyHSD(anov) %>% purrr::pluck("year") %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  separate(rowname, sep = "-", into = c("yr1", "yr2")) %>% 
+  mutate(across(starts_with("yr"), as.numeric)) %>% 
+  {rbind(., rename(., c("yr1" = "yr2", "yr2" = "yr1")))}
+
+  grid <- expand_grid(yr1 = full_seq(tab$yr2, period = 4),
+                        yr2 = full_seq(tab$yr2, period = 4))
+  grid %>% left_join(tab) %>% 
+  mutate(across(starts_with("yr"), as.character)) %>% 
+  ggplot(aes(x = yr1, y =yr2, fill = `p adj`)) +
+  geom_tile(col = "black") +
+  scale_fill_gradient(low = "red", high = "white", name = "P-value", na.value = "grey", breaks = c(0,.2,.4,.6,.8,1)) +
+  theme(axis.title = element_blank()) +
+    labs(title = "Siginficance Results of Pairwise ANOVA")
+```
+
+# Topic Analysis
+
+Topic modeling attempts to find the text data's underlying structure. It searches for words that commonly co-occur and develops topics that contain differing probabilities of each word. It produces two statistics: $\beta$, a word's probability of appearing by topic, and $\gamma$, a document's probability of containing a topic.
+I count words by party and try a model with two topics. The second topic appears more Republican, though "Democrats" appears in both. Overall, the difference isn't striking enough to be persuasive.
+
+```{r}
+library(topicmodels)
+library(tidytext)
+
+p_dtm <- overall %>% mutate(across(c(party, year), as.factor)) %>% 
+  group_by(party) %>% 
+  add_count(word) %>% 
+  cast_dtm(term = word, document = party, value = n)
+
+topics_p <- LDA(p_dtm, k = 2)
+```
+
+```{r}
+topics_p %>% tidy() %>% 
+  group_by(topic) %>% slice_max(n =20, order_by = beta)
+
+```
+
+
+Now I treat each year's platforms as a single text. I choose $k$ of 13 rather than 14 because the Republicans had no platform in 2020.
+Differentiation is now clear; it's not hard to guess what year contained "reagan" and "soviet."
+```{r, cache = TRUE}
+y_dtm <- overall %>% mutate(across(c(party, year), as.factor)) %>% 
+  group_by(year) %>% 
+  add_count(word) %>% 
+  cast_dtm(term = word, document = year, value = n)
+
+topics_y <- LDA(y_dtm, k = 14, control = list(seed = 54321))
+
+
+topics_y %>% tidy() %>% 
+  group_by(topic) %>% slice_max(n =20, order_by = beta)
+
+```
+
+Average beta by topic for the year-topic model. A higher value indicates fewer distinct words.
+```{r}
+topics_y %>% tidy() %>% 
+  group_by(topic) %>% slice_max(n =20, order_by = beta) %>%  summarize(beta_mean = mean(beta)) %>% 
+  ggplot(aes(x =fct_reorder(factor(topic), beta_mean), y = beta_mean, fill = factor(topic))) +
+  geom_col() +
+  coord_flip() +
+  labs(y = "Topic Mean of Beta", x = "Topic") +
+  theme(legend.position = "none")
+
+```
+\n
+Topic 6 had the highest average beta among the top 20 words, indicating its most frequent words were relatively more common than other documents. The year must be 1976 or 1980, from the reference to Carter.
+```{r}
+ topics_y %>% tidy() %>%
+  filter(topic == 6) %>% 
+  arrange(-beta) %>% 
+  slice_max(n = 20, order_by=beta)
+  
+```
+
+
+Sure enough, the topic contains several of the top 20 words of 1980 and 1976.
+```{r}
+overall %>%
+  count(word, year) %>% 
+  bind_tf_idf(term = word, document = year, n=n) %>% 
+  inner_join(topics_y %>% tidy() %>%
+  filter(topic == 6) %>% 
+  arrange(-beta) %>% 
+  slice_max(n = 20, order_by=beta), by = c("word"="term")) %>% 
+  group_by(word) %>% 
+  arrange(-tf) %>% 
+  slice_max(n =1, order_by = tf) %>% 
+  ungroup() %>% 
+  count(year) %>% 
+  arrange(-n)
+```
+It looks like the year-topic correspondence did the worst for the 1980s but performed well in other years. Perhaps there was less variation that decade because Republicans controlled the presidency the whole time?
+```{r}
+year_gamma <- tidy(topics_y, matrix = "gamma")
+year_gamma %>% group_by(document) %>% 
+  slice_max(n =1, order_by =gamma) %>% 
+  arrange(document)
+
+year_gamma %>% ggplot(aes(x = factor(topic), y = gamma, fill = factor(topic)))+
+  geom_col() +
+  theme(axis.text.x = element_blank())+
+  facet_wrap(document~ ., nrow = 2) +
+  labs(y = "Gamma", x= "Topic", title = "Gamma by Platform Year", scales = "free_x", fill = "Topic")
+
+```
+
+Another way of visualizing the pattern. 1984 and 1988 are the only years that aren't predominantly associated with one topic.
+
+```{r}
+
+ord <- topics_y %>% tidy(matrix = "gamma") %>% 
+  group_by(topic) %>% 
+  slice_max(n = 1, order_by = gamma) %>% 
+  arrange(document) %>%
+  pull(topic)
+topics_y %>% tidy(matrix = "gamma") %>% 
+  ggplot(aes(x = factor(document), y = factor(topic, ordered = TRUE, levels = ord), fill = gamma)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Gamma by Topic and Year", x = "Year", y = "Topic", fill = "Gamma") +
+  theme(axis.ticks = element_blank())
+  
+```
+
+
+
+
+Which words were most consistent among topics? Not surprisingly, generic ones relating politics. "American" is among the top 20 words in all fourteen topics.
+```{r}
+ topics_y %>% tidy(matrix="beta") %>% 
+  group_by(topic) %>% 
+  slice_max(n=20, order_by = beta) %>% 
+  left_join(year_gamma, ., by = c("topic")) %>% 
+  count(term, topic) %>% 
+  count(term, wt = n) %>% 
+  mutate(n = n/14) %>% 
+  arrange(-n)
+```
+Let's compare the top 10 words among each topic. A handful are shared among almost all topics, but some are common only to a few.
+```{r}
+ topic_words <- topics_y %>% tidy(matrix="beta") %>% 
+  group_by(topic) %>% 
+  slice_max(n=10, order_by = beta) %>% 
+  ungroup()
+
+# ggplot(data = topic_words %>% mutate(term = fct_reorder(factor(term), beta, sum)))+
+# topic_words %>% mutate(term = fct_reorder(factor(term), beta, sum)) %>% 
+#   split(.$term) %>% 
+#   {.[rev(order(map_dbl(., ~sum(.x$beta))))]} %>% 
+#   map(~geom_col(data = .x, position = "dodge", aes(x= factor(term), y =beta, fill = fct_reorder(factor(topic), beta)))) +
+#   coord_flip() +
+#   #scale_x_discrete(labels = levels(fct_reorder(factor(topic_words$term), topic_words$beta, sum)))
+#   labs(title = "Combined Betas of Top Topic Words", x = "Term", y = "Beta", fill = "Topic")
+
+topic_words %>% ggplot(aes(x= fct_reorder(factor(term), beta, sum), y = beta, fill = factor(topic))) +
+  (topic_words %>% mutate(term = fct_reorder(factor(term), beta, sum)) %>% 
+     split(.$term) %>% 
+     {.[rev(order(map_dbl(., ~sum(.x$beta))))]} %>% 
+     map(~geom_col(data = .x, position = "dodge", aes(x= factor(term), y =beta, fill = fct_reorder(factor(topic), beta))))) +
+  coord_flip()+
+  scale_x_discrete(labels = levels(fct_reorder(factor(topic_words$term), topic_words$beta, sum))) +
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_text(size = 8))+
+  labs(title = "Combined Betas of Top Topic Words", x = "Term", y = "Beta", fill = "Topic") +
+  guides(fill = guide_legend(ncol =2))
+  
+```
+\n
+Which of each topic's most common words had the lowest betas in other topics? It appears variants of "democrat" were used much more in some years than in others.
+
+```{r}
+topics_y %>% tidy(matrix="beta") %>% 
+  group_by(topic) %>% 
+  slice_max(n=5, order_by = beta)  %>% 
+  ungroup() %>% 
+  split(.$term) %>% 
+  map(~arrange(.x, -beta))%>% 
+  bind_rows() %>% 
+  ggplot(aes(x = fct_reorder(factor(term),beta, max), y = beta, fill = factor(topic))) +
+  geom_col(position = "dodge")+
+  coord_flip()+
+  labs(x = "Term", y = "Beta", fill = "Topic",title = "Beta Distribution for Top Topic Words")
+```
+
+# Conclusion
+
+Party platforms varied strongly by year, and were well differentiated in a one-topic-per year model. Democratic and Republican platforms overall were fairly similar. The most commonly used words tended to be generic ("American", "Support", etc)., but many platforms had words common only in that year (often the names of candidates). Average platform sentiment was mildly positive overall. and significantly more so for the incumbent's party. Many further insights into American political history could be gleaned by further analysis of party platforms.
+
+
+
+
