@@ -1,0 +1,135 @@
+---
+title: "ISLR Chapter 4 Exercises"
+author: "Ryan Heslin"
+date: "11/12/2020"
+output: html_document
+---
+
+
+
+We now examine the differences between LDA and QDA.(a) If the Bayes decision boundary is linear, do we expect LDA or QDA to perform better on the training set? On the test set?(b) If the Bayes decision boundary is non-linear, do we expect LDA or QDA to perform better on the training set? On the test set?(c) In general, as the sample size n increases, do we expect the test prediction accuracy of QDA relative to LDA to improve, decline,or be unchanged? Why?
+1704. Classification(d) True or False: Even if the Bayes decision boundary for a givenproblem is linear, we will probably achieve a superior test error rate using QDA rather than LDA because QDA is flexibleenough to model a linear decision boundary. Justify your answer.
+
+a. QDA might perform better on the training set, but not on the test set. QDA's higher flexibility would yield a better training fit, but it would overfit the true linear relationship and yield poor predictions.
+
+b. In this case, QDA should outperform LDA on both sets.
+
+c. QDA's test accuracy improves as $n$ increases because each class' distribution is modeled on a subset of $n$. If $k$ is held constant, higher $n$ means a better fit.
+
+d. False. This is true of training accuracy, since flexibility always improves it, but QDA will suffer if the true relationship is linear because of excessive variance. This is especially true with a large number of classes, since the covariance matrix of each is estimated separately. 
+
+6. Suppose we collect data for a group of students in a statistics class with variables X1= hours studied,X2= undergrad GPA, and Y=receive an A. We fit a logistic regression and produce estimated coefficient,ˆβ0=−6, ˆβ1=0.05, ˆβ2=1.
+
+The odds are:
+
+
+```{r}
+library(tidyverse)
+library(rlang)
+ eqn<- quote(exp(B0 +B1*X1 +B2*X2)/ (1 + exp(B0 + B1*X1 + B2*X2)))
+ eval(eqn, env = list(B0 = -6, B1 = .05, B2 = 1, X1 = 40, X2 = 3.5))
+ 
+ eval(expr((log(.5/(1-.5)) - B2*X2 - B0)/B1), env = list(B0 = -6, B1 = .05, B2 = 1, X2 = 3.5))
+
+```
+That student better get studying!
+
+7. Suppose that we wish to predict whether a given stock will issue a dividend this year (“Yes” or “No”) based onX, last year’s percent profit. We examine a large number of companies and discover that the mean value of X for companies that issued a dividend was ̄X= 10,while the mean for those that didn't’t was ̄X= 0. In addition, the variance of X for these two sets of companies was ˆσ2= 36. Finally,80 % of companies issued dividends. Assuming that X follows a nor-mal distribution, predict the probability that a company will issuea dividend this year given that its percentage profit was X=4lastyear.
+
+This situation calls for LDA, since we know the random variable has a common distirbution among classes this is simply a matter of substituting into Bayes' rule.
+I get a probability of about 75%.
+
+
+```{r}
+mu <- c(10, 0)
+pi_k <- c(.8, 1-.8)
+x <- 4
+sigmasqd <- 36
+
+eqn <- quote((1/sqrt(2*pi*sigmasqd)*exp(-(x-mu)^2/(2*sigmasqd))*pi_k))
+res <- eval(eqn)[1]/sum(eval(eqn))
+
+eqn
+res
+```
+
+
+8. Suppose that we take a data set, divide it into equally-sized training and test sets, and then try out two different classification procedures.First we use logistic regression and get an error rate of 20 % on the training data and 30 % on the test data. Next we use 1-nearest neigh-bors (i.e.K= 1) and get an average error rate (averaged over bothtest and training data sets) of 18%. Based on these results, whichmethod should we prefer to use for classification of new observations? Why?
+
+KNN training error is really the error of using the training set as the test set. If $k=1$, the algorithm will classify by the closest observation, which is always _that observation itself_. This means a training error of zero, so this terrible KNN's test error must be $2\times18=36$. Clearly we should use the logistic model.
+
+9. This problem has to do with odds.(a) On average, what fraction of people with an odds of 0.37 of defaulting on their credit card payment will in fact default?(b) Suppose that an individual has a 16 % chance of defaulting on their credit card payment. What are the odds that she will de-fault?
+
+
+Easy enough.
+
+a. $\text{Odds}=\frac{p(X)}{1-p(X)}$. By substitution, $p(X) = \frac{\text{Odds}}{1+\text{Odds}}$, so:
+
+```{r}
+o <- .37
+p <- .16
+eval(quote(o/(1+o)))
+eval(quote(p/(1-p)))
+```
+
+This problem asks us to develop a model for gas mileage
+
+a. The problem doesn't say how to handle the median itself, so I decide to code it 1.
+b. I make some plots. Boxplotting a categorical variable gives hilarious results. Wight, horsepower, cylinders, and displacement have the strongest correlations
+```{r}
+library(ISLR)
+auto <- Auto
+glimpse(auto)
+median(auto$mpg)
+auto <- within(auto, mpg01 <- ifelse(mpg >=median(mpg), 1,0))
+
+imap(auto, ~ggplot(data =auto, aes(x = .x, fill = x)) + geom_boxplot() + coord_flip() +xlab(.y))
+
+auto[,sapply(auto, is.numeric)] %>% cor() %>%
+  as.data.frame() %>% 
+  rownames_to_column() %>%
+  rename("x1" = "rowname") %>% 
+  pivot_longer(-x1, names_to = "x2", values_to = "cor") %>% 
+  ggplot(aes(x = x1, y = x2, fill = abs(cor))) +
+  geom_tile(col = "white") +
+  scale_fill_gradient(low ="blue", high ="red")  +
+  labs(fill = "Correlation") +
+  theme(axis.text.x = element_text(angle = 90))
+
+ggplot(data = auto, aes(x = mpg01, y = weight)) +
+  geom_point()
+  
+```
+
+Split the data into a training set and a test set and compare models.
+The error rates are all quite similar, around 88-90%. Changing k doesn't make much difference either.
+```{r}
+set.seed(1)
+inds <- sample(seq(1, nrow(auto)), size = round(nrow(auto)/5), replace = FALSE)
+train <- auto[inds,]
+test <- auto[-inds,]
+
+library(MASS)
+lda <- lda(data = train, mpg01 ~ weight + displacement + cylinders)
+(predict(lda, test)$class == test$mpg01) %>% mean()
+
+qda <- qda(data = train, mpg01 ~ weight + displacement + cylinders)
+(predict(qda, test)$class == test$mpg01) %>% mean()
+
+logged <- glm(data = train, mpg01 ~ weight + displacement + cylinders, family = binomial)
+(predict(logged, test, type = "response") %>% round() == test$mpg01) %>% mean()
+```
+Accuracy ceases to meaningful improve at $k=7$.
+```{r}
+library(class)
+true <- factor(train$mpg01)
+test_true <- factor(test$mpg01)
+k_train <- train %>% dplyr::select(weight, displacement, cylinders) %>% 
+  scale()
+k_test <- test %>% dplyr::select(c(weight, displacement, cylinders)) %>% 
+  scale()
+
+lapply(1:10, function(x) knn(train = k_train, cl = true, test = k_test, k = x)) %>% map(~.x == factor(test$mpg01)) %>% 
+  map_dbl(mean)
+```
+

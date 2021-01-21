@@ -1,0 +1,221 @@
+---
+title: "ISLR Chapter 7 Notes"
+author: "Ryan Heslin"
+date: "12/1/2020"
+output: html_document
+---
+
+# Questions for Review
+
+1. How can we get the variance of polynomial regression estimators?
+2. What is the general form of nonlinear regression?
+3. How do step functions transform predictors ?
+4. How do they differ from basis functions?
+5. How does applying constraints to splines impact degrees of freedom?
+5. What are knots? How do they impact the form of a regression?
+6. What is different about natural splines?
+7. How can we find the degrees of freedom of a spline model?
+8. How do smoothing splines remove discontinuities from the fit?
+9. How does local regression work? How may it be applied to multiple predictors?
+10. What is the general concept of GAMS?
+11. How do GAMs handle smoothing splines and other non-OLS functions?
+# Overview
+
+This chapter discusses methods that attempt to balance interpretability with flexibility. The first four work only on one predictor. Local regressionc can generally be applied to a few predictors, and generalized additive models can work with any number.
+
+They are:
+
+1. Polynomial regression: run OLS after exponentiation some predictors
+2. Step function: cut the predictor into quantiles, convert to categorical
+3. Regression spline: Cut predictor into quantiles add fit a polynomial function to each, with the constraint that the quantile boundaries (knots) join smoothly.
+4. Local regression: spline variant that permits regions to overlap
+5. Generalized additive models: extend these approaches to multiple predictors
+
+# Polynomial Regression
+
+This method replaces the predictor with a polynomial function:
+
+\[Y = \beta_0+ \beta_1X +\beta_2X^2+\beta_dX^d\]
+where $d$ is the degree of the polynomial, usually no more than four or five. This approach simply fits OLS on the vectors of the transformed predictor. This means coefficients have no particular meaning; to interpret the model, we have to look at the fitted values.
+
+This works for logistic regression as well, as the second plot demonstrates.
+
+```{r}
+library(tidyverse)
+library(rlang)
+library(ISLR)
+library(lubridate)
+
+wage <- Wage
+form <- expr(wage ~ poly(age, degree =4))
+wage %>% ggplot(aes(x = age, y = wage)) +
+  geom_jitter(col = "grey", shape = 21) +
+  stat_smooth(method = "lm", formula = y ~ poly(x, degree = 4))
+
+wage %>% mutate(wage2 = ifelse(wage < 250, 0, 1)) %>% 
+  ggplot(aes(x = age,  y = wage2)) +
+  stat_smooth(method = "glm", formula = y~ poly(x, degree =4), method.args =list(family = "binomial")) +
+  coord_cartesian(ylim=c(0, .2))
+  
+
+
+```
+ 
+ A fit for a given value of $x$, $x_0$, is given by:
+ 
+ \[\hat{f}(x_0)= \beta_0 + \beta_1x_0+\beta_2x_0+\beta_3x_0+\beta_4x_0\]
+ 
+Each beta has its own estimated variance, and the covariance of the betas can also be estimated. For each value $x_n$, the corresponding variance of the estimator function ($Var(\hat{f}(x_0))$)) is the sqaure root of the dot product of the vector of predictor values ($(1, x_0, x_0^2$), etc.) for that point and the variances of the betas (1 for $\beta_0$). This is called pointwise standard error, which amounts to the variance of $\hat{f}(x_0)$, where $\hat{f}$ is essentially a random variable, for that particular value. The curve is fitted by computing it for each distinct $x_i$. It can be thought of as the standard error of $\hat{f}(X)$) for a given value of $X$, the way the SEM varies by $n$.
+
+# Step Functions
+
+Step functions eschew a global function for separate functions defined for quantiles. The range of $X$ is divided by $k$ cutpoints into $K+1$ categorical variables. This transforms regression into a classification problem, where regression weights are the classes
+
+\[C_0(X) = I(X<c_1),\\
+C_1X = I(c_1<=X<c_2),\\
+\vdots\\
+C_KX=I(C_K) <= X\]
+where $I$ is an indicator function that returns 1 for TRUE and 0 for FALSE. Each new variable $C_K(X)$ is 1 for the appropriate interval and 0 for all other intervals. Therefore, for each value of $X$, $\sum{C^K}_{i=1}=1$. Once the data are cut, a linear model is fit, with a separate beta for each $C_k$:
+
+\[Y = \beta_0 + \beta_1C_1 +\beta_2C_2...+\beta_KC_K+\epsilon_i\].
+Because every $C_K=0$ when $X<C_1$, $\beta_0$ is the mean of $Y$ for the lowest quantile. Since only one $X_K$ is ever 1, each beta represents that interval's average impact on $Y$ after adding $\beta_0$.
+
+Note that we exclude $C_0$ because it is redundant with the intercept (since $\beta_j \times 1 =\beta_j$). Any interval could be arbitrarily ignored.
+
+Step functions are not useful if the data lack natural breakpoints.
+
+# Basis Functions
+
+Piecewise and polynomial regression are a simple case of basis functions. Here, a series of functions $b_KX$ is applied to $X$, and the result of each receives its own beta:
+
+\[Y = \beta_0+\beta_1b1(X) +\beta_2b2(X)...+\beta_Kb_K(X)+\epsilon_i\]
+
+Each function $b_k$ is fixed before fitting the model. In polynomial regression, it is $X^j$, in piecewise the series of indicator functions. Once the functions are applied, the betas are solved for as usual. Note that only a single $X$ is transformed into $K$ variables.
+
+# Regression Splines
+
+## Piecewise Polynomials
+
+This approach fits a different low-degree polynomial over different parts of the range of $X$. The boundaries between regions, where the betas change, are called _knots_. Take this simple pieceise with a knot at c:
+
+ 
+\[
+Y =\Bigg\{
+\begin{align}
+\beta_0+\beta_{11}x_i+\beta_{21}x_i^2+\beta_{31}x_i^3+\epsilon_i\text{ if }x_i <c\\
+\beta_0+\beta_{12}x_i+\beta_{22}x_i^2+\beta_{32}x_i^3+\epsilon_i\text{ if } x_i >=c
+\end{align}
+\]
+
+A separate function is applied to each subset, then OLS is used to estimate separate betas for each region (including separate intercepts). The values(s) cutting off ranges of $X$ are called knots; there are $K+1$ regions for $K$ knots. The piecewise functions can also be linear or even constants. Note each piecewise function has degrees of freedom equal to its number of parameters (8 in the above example).
+
+## Constraints and Splines
+
+If unconstrained, piecewise fits tend to create jagged knots, creating sharp discontinuities in plots of the fit. This can be remedied by constraining the fit to be continuous. The fit can be smoothed further by requiring derivatives (or derivatives of derivatives) to be continuous as well. Each constraint effectively deducts a degree of freedom, making the fit less flexible. The most popular form are cubic splines, which are continuous at the first and second derivatives. If these have $K$ knots, they use $K+4$ degrees of freedom (four for each estimated parameter).
+
+In general, a spline of degree $d$ is a piecewise polynomial of degree $d$, continuous in derivatives up to the $d-1$ derivative at each knot.
+Linear splines fit a separate line in each knot-bounded region and are continuous at knots.
+
+## The Spline Basis Representation
+
+Splines are really a variant of basis functions, where each knot region receives its own function $b_K$ and its own $\beta_k$:
+
+\[y_i =\beta_0 +\beta_1b_1(x_i) +\beta_2b_2(x_i)...+\beta_{K+3}b_{K+3}(x_i)+\epsilon_i\]
+After fixing the functions $b_k$ up to the term of the polynomial, we add for each knot a truncated power basis function (each knot is the $\beta_{K+i}b_{K+i}(x_i)$. This function creates a discontinuity only in the third derivative for the correponding knot region, ensuring a smooth fit. The truncated basis is:
+
+\[h(x,\xi)=(x-\xi)^3_+=\Big\{
+\begin{align}
+(x-\xi)^3\text{ if } x >\xi\\
+0\text{ otherwise}
+\end{align}
+\]
+where $\xi$ is the knot. The function returns the cube of the value by which $x$ exceeds the knot cutoff, and each such truncated basis gets its own beta. This function ensures continuity in the first and second derivaitve in exhcnage for a discontinuity in the second.
+
+In all, for $K$ knots, a cubic spline has $K+4$ terms (the intercept, the three polynomial terms, and $K$ truncated basis terms, one for each knot). It therefore has that many degrees of freedom.
+Splines often have high variance near the boundaries of the predictor's range. _Natural splines_ solve this by constraining the function to be linear in the first and last knot regions (those below the first knot and above the last). This narrows CI estimates for the ends of the function.
+
+## Choosing Numbers and Locations of Knots
+
+The most flexible splines have more knots in regions where the function varies the most. It is simpler to select a number of degrees of freedom and let R place the corresponding number of knots at uniform intervals.
+
+For example, a natural cubic spline with $df=4$ has three knots. The boundaries can be thought of additional knots, which would give $K+4=9$ df, but there are two constraints for each boundary,and the intercept subtracts an additional degree of freedom, leaving $df = 4$.
+
+The best approach is of course cross-validating RSS for differing numbers of knots. This is impractical when splines are fitted on multiple predictors at once (in GAM), in which case df is usually fixed.
+
+## Splines vs. Polynomial Regression
+
+Splines are often better than non-pieceiwse polynomials because they achieve the same flexibility as a higher polynomial degree by estimating separate parameters for each knot. A cubic spline fit with four knots, for example, has $4+4=8$ df, the same as a seven-degree polynomial. This yields more stable estimates; high-degree polynomials are often excessively variant near the boundaries of $X$. They also let us adjust model flexibility for differing variability across regions of the function we are trying to replicate.
+
+# Smoothing Splines
+
+We could easily find a function $g(x)$ that fits the training data perfectly, but that would be a useless fit. We need to constrain the RSS formula to give a smoother, and hence less variant, fit. We minimize:
+\[\sum^n_{i=1}(y_i-g(x_i))^2 +\lambda\int{g''(t)^2dt}\]
+The integral penalizes $g$ for variability. The second derivative of $g$ represents the rate of change of the function's slope at point $t$, so the integral represents the total change of $g'(t)$ over the range of $t$ (the predictor of concern). The antiderivative of the second derivative, obviously, is the first. Where $g'(t)$ is close to constant (i.e., an unvarying slope, with 0 derivative), the integral will be very small. Larger values of $\lambda$, the tuning parameter, increase the penalty. Where $\lambda=0$, $g$ perfectly interpolates the training data; where $\lambda =\infty$, $g$ is just the OLS best fit line.
+
+It turns out the minimizing function is a natural cubic spline (remember, constrained on the borders) with knots at every unique value of $X$. As a natural spline, it has  continuous first and second derivatives at each knot and is linear in the boundary regions, shrunken by the value of $\lambda$.
+
+## Choosing the Tuning Parameter
+
+A natural spline with a unique fit for each data value has $n$ degrees of freedom, but $\lambda$ reduces its _effective_ degrees of freedom. There are $n$ parameters, but each is shrunk by the constraint. We obtain the fit by:
+\[\hat{g}_\lambda=\sum^n_{i=1}S_{\lambda}y\]
+where $S_{\lambda}$ is an $n\timesn$ matrix of fitted values by which the response is multiplied. (The formula for this matrix is nasty). Then effective degrees of freedom is:
+\[df_\lambda=\sum^n_{i=1}\{S_\lambda\}_{ii}\]
+or the sum of the diagonal elements of the matrix.
+
+There is a convenient shortcut formula for estimating the lambda that minimizes LOOCV RSS. 
+
+\[RSS_{cv}(\lambda)=\sum^n_{i=1}(y_i-\hat{g}^{(-i)}_\lambda(x_i))^2 =\sum^n_{i=1}\Bigg[\frac{y_i-\hat{g}_\lambda(x_i)}{1-\{S_\lambda\}_ii}\Bigg]^2\]
+
+here, $g_\lambda^{(-i)}$ is the fit the spline gives for $x_i$ using every training evaluation except $(x_i, y_i)$ i.e., the fit for the holdout observation. $g_\lambda(x_i)$ gives the fit for $x_i$ using all observations. In other words, we sum the squares of the ratio of each point's residual to the complement of the fitting parameter $\{S_\lambda\}_{ii}$. This requires us to only compute one fit! This formula lets us pick a number of effective degrees of freedom to specify.
+
+#Local Regression
+
+This method computes a separate fit for each $x_0$ from nearby training observations. For each $x_0$, a weighted regression is fitted on nearby points; closer points get higher weights. The modeler has to choose the weighting function, regression type (linear, constant, quadratic, etc.), and most importantly the span of local regressions $(0 < s <=1)$. The bigger the span, the more points are used in each regression, and the less flexible the final fit. It can be chosen by cross-validation.
+
+A useful variant is varying coefficient models, which fit some predictors globally but others locally. The neighborhood approach can also be extended to multiple predictors - e.g., fitting local regressions on $X_1$ and $X_2$ for observations close to the target point in two-dimensional space. This fails in dimensions above 3 or 4 because there are seldom enough nearby training points.
+
+Here is the algorithm:
+
+1. Get the $s=\frac{k}{n}$ training points whose $x_i$ are closest to $x_0$. 
+2. Assign each point a weight $K$ such that the furthest has $K=0$ and the nearest the highest weight.
+3. Fit a weighted least squares observation, finding betas that minimize:
+\[\sum^n_{i=1}K_{i0}(y_i-\beta_0-\beta_1x_i)^2\]
+4. Compute each fitted value by $\hat{f}(x_0)=\beta_0+\beta_1x_0$
+
+Note how the weights are applied to the RSS function, not the fit equation, so the estimator tries harder to minimize RSS for closer points.
+
+# Generalized Additive Models
+
+GAMs fit nonlinear functions to multiple predictors while maintaining the additive assumption of linearity. They can be applied to both prediction and regression.
+
+## GAM Regression
+
+To extend multiple regression to nonlinear relationships, we can just replace each linear term $\beta_jx_ij$ with a nonlinear function, $f_j(x_{ij})$. Remember vector spaces can consist of polynomials. This is also analogous to treating functions as objects. The model becomes:
+
+\[y_i = \beta_0+f_1(x_{i1})+f_2(x_{i2})+\dots+f_p(x_{io})+\epsilon_i\]
+
+We just compute a separate function for each $X_j$ and add them. The functions need not be of the same type; we could easily combine two natural splines with a qualitative variable modeled with constants for each level. (Remember splines treat differently different values WITHIN each predictor). As a result, each predictor can have a linear OR nonlinear relationship with the fitted values, yet the model itself uses classic OLS. This makes separate relationships easy to interpret. 
+
+This becomes more complicated with smoothing splines, since OLS cannot be applied to such estimates (since any constant can be added to each $f_j(X_{ij})$, making it impossible to find a unique intercept term for the regression). The workaround is backfitting: adding each predictor to the fit in sequence, holding the others fixed. This involves fitting each subsequent function on the partial residual of the previous iteration of the fit, starting from arbitrary estimates of the betas. After the first set of estimates is obtained, the algorithm is repeated until the estimates converge. For $X_3$, this would be $r_i=y_i-f_1(x_{i1})-f_2(x_{i2})$. Then we obtain $f_3$ by using this as the response in whatever nonlinear approach we want to perform on $X_3$. 
+
+
+## Pros and Cons of GAMs
+
+GAMs have several virtues:
+1. Allow us to test nonlinear approaches on multiple variables at once.
+2. Potentially very accurate
+3. Interpreted the same as OLS; each $f_p$ gives the effect $X_p$ has on $Y$, holding all others constant.
+3. Degrees of freedom conveniently express the smoothness of each function.
+
+The main drawback is that the model is purely additive; interaction is impossible, since it would violate multiplicative linearity. We can work round this by creating interaction predictors of the form $X_j\times{X_k}$ or creating interaction functions.
+
+## GAM Classification
+
+Using the familiar logit expression, a qualitative GAM takes the form:
+
+
+\[log(\frac{p(X)}{1-p(X)})=\\beta_0+f_1(x_{i1})+f_2(x_{i2})+\dots+f_p(x_{io})+\epsilon_i\]
+
+The strengths, caveats, and interpretation guidelines discussed above still apply.
+
+

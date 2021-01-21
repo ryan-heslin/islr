@@ -1,0 +1,215 @@
+---
+title: "ISLR Chapter 6 Notes"
+author: "Ryan Heslin"
+date: "1/3/21"
+output: html_document
+---
+
+# The Maximal Margin Classifier
+
+# Review Questions
+1. What is a hyperplane?
+2. What criterion must a separating hyperplane satisfy?
+3. How can hyperplanes be used to do binary classification?
+4. What is the maximum margin classifier?
+5. WHat role do support vectors play in defining the hyperplane?
+6. How does changing observations that are not support vectors impact the model?
+7. How do support vector classifiers deal with non-separable cases?
+8. How are SVCs parameterized?
+9. What is a support vector machine?
+10. How may kernels be used to create SVMs?
+11. How can hyperplanes be adapted to $K>2$ problems?
+
+## Hyperplanes
+  
+  In $R^p$, a hyperplane is a "flat" $p-1$ dimensional affine (offset from the origin) subspace. In $R^2$, it is a line, in $R^3$ a plane. The $R^2$ case can be defined:
+\[\beta_0 + \beta_1X_1 + \beta_2X_2=0\]
+
+which is just the equation of a line. The hyperplane consists of all vectors (in this case, points) $X$ for which the $X = (X_1, X_2)^T$ (a $p\times{n}$ matrix) satisfies the defining equation - that is, all systems of partial column rank (ignoring $\beta_0$). The hyperplane itself, being affine, cannot be represented in matrix form, but the equation can be used to find assess whether any vector lies above, beneath, or on it.
+
+FOr $p$ dimensions, the equation is:
+\[\beta_0 + \beta_1X_1 + \beta_2X_2=0 +\dots+\beta_pX_p\].
+
+If $\beta$ is the betas vector and the observations are row vectors:
+
+\[\beta^T{X^T}=0\]
+or equivalently:
+\[X\beta=0\]
+
+Note that this gives a scalar for each input vector that determines whether it lies on the hyperplane. The hyperplane itself is a parameterized flat (in the simplest case the equation of a line).
+ 
+No matter its dimension, the hyperplane partitions space into portions where the equation is above or below 0. The sign of the RHS tells on which side of the hyperplane a given $X$ ($p$ row vectors of arbitrary length, the transpose of a standard data matrix $X$) falls.
+ 
+```{r}
+library(tidyverse)
+expand_grid(x = -seq(-10, 10, by = .2), y = x) %>% 
+  mutate(hyper = -x < y) %>% 
+  ggplot(aes(x =x, y = y, col = hyper)) +
+  geom_point(size = 1, alpha = .1) +
+  geom_abline(aes(slope = -1, intercept = 0)) 
+
+
+```
+ 
+ ## Hyperplanes and Classification
+ 
+ Hyperplanes lend themselves to binary classification problems. Say we have a typical $n\times{p}$ data matrix, where each observation is classed either -1 or 1. Each observation is a p-length vector ($x^*=(x_1^*+\dots+x_p^*)$
+ 
+ A separating hyperplane classifies observations on one side as -1 and the other as 1. Its equations are given by:
+ 
+ \[\beta_0 + \beta_1X_{i1} + \beta_2X_{i2}0 +\dots+\beta_p{X_ip}>0\text{ if }y_i =1\],
+ \[\beta_0 + \beta_1X_{i1} + \beta_2X_{i2}0 +\dots+\beta_p{X_ip}<0\text{ if }y_i =-1\]
+ meaning the dot product of the betas vector and each row vector has the appropriate sign.
+ Or if $Y$ is the vector of true class labels:
+ 
+ \[\beta{X}\]
+ 
+ Classes are predicted based on the side of the plane they fall on, as indicated by the sign of $f(x^*)$. The magnitude of this value indicates confidence in our prediction; the further from the plane, the more confident we can be. Note the plane equation must never equal 0. Of course, the decision boundary must be linear.
+ 
+ ## The Marginal Maximum Classifier
+ 
+ If any hyperplane exists, an infinite number do (since it is nothing more than a nontrivial solution to $Ax =0$ for the data matrix). So we must choose one.
+ 
+ The _maximum margin hyperplane_ maximizes the _shortest_ difference between _any_ training $x_i$ and the hyperplane, a value known as the margin. Contrast with the lienar model approach of minimizing the combined distances. This produces the _maximal margin classifier_.
+ 
+ The closest observation(s) to the hyperplane is called the _support vector_. Its position determines that of the hyperplane, since moving it would change the minimum difference and therefore the hyperplane's position. Its distance to the hyperplane is called the margin; there are no points this close to the hyperplane in either direction, so no classifications are made here. (Changing any other observation would have no effect, unless its new distance fell below the margin and it became the new minimum distance).
+ 
+ This dependence on just a few observations is important.
+ 
+ ## Obtaining the MMC
+ 
+ The MMC solves the optimization problem:
+ \[\text{maximize } M\\
+ \text{subject to }\sum_{j=1}^p\beta_j^2=1\\
+ y_i(\beta_0+\beta_1x_{i1}+\beta_2x_{i2}+\dots+\beta_px_{ip}) >= M\forall{i=1,\dots{,n}}\]
+ 
+ (The inverted A means "for all")
+ The last term guarantees that every observation will be correctly classified if its distance is greater than $M$ - the margin. The result must always be positive because $y_i$ must have the same sign as the value of $f(x^*)$. $M$ is really an absolute value. The second term insures the betas' squares sum to 1 and are therefore unit-length, ensuring distances from the hyperplane are consistently expressed
+ 
+ ## The Non-Separable Case
+ 
+ Should no hyperplane exist (i.e., the data matrix has full rank), the problem above cannot be solved with $M >0$. We can still approximate a solution using the _support vector classifier_.
+ 
+ # Support Vector Classifiers
+ 
+ Perfect separating hyperplanes are not always possible, and may not be wanted if they are. Such a hyperplane is overly sensitive to training observations, since the margin is defined by the minimum distance and can drastically change with just one observation (often an observation of one class that falls close to one of the other). A thin margin (indicating little confidence in classifications) also worsens performance. We ought to correct this by finding a hyperplane that does not perfectly separate.
+ 
+ _Support vector classifiers_ achieve this. They allow some observations to fall within the margin, or even on the wrong side of the hyperplane itself. (Recall we are not confident about classifying within the margin). Observations on the wrong side of the hyperplane are knowingly misclassified.
+ 
+ SVC's add an extra constraint to the standard hyperplane classification problem:
+ 
+ \[y_i(\beta_0+\beta_1x_{i1}+\beta_2x_{i2}+\dots+\beta_px_{ip}) >= M(1-\epsilon_i)\\
+ \epsilon_i>=0,\sum_{i=1}^n\epsilon_i<=C\]
+ 
+ where $C$ is a tuning parameter greater than 0.
+ 
+ Each $\epsilon_i$ is a _slack variable_ that indicates how far an observation is from correct classification:
+ \[\epsilon_i = 0\rightarrow{\text{Correct margin side}}\\
+ 0 < \epsilon_i  < 1\rightarrow{\text{Wrong margin side}}\\
+ \epsilon_i >1 \rightarrow{\text{Wrong hyperplane side}}\]
+ 
+ Recall that the $y_i$ sequence, in a separating hyperplane, is always greater that 0.
+So in the first case, the margin applies as usual. In the second, $M$ is shrunk by the complement of $epsilon_i$, resulting in a fit on the correct hyperplane side but within the margin. If $\epsilon_i=1$ (not allowed by the definition), that would mean an observation lay on the margin boundary. In the last case, the $M(1-\epsilon_i) <0$, so outright misclassifications ($y_i\dots < 0$) are permitted.
+ 
+ As before, classification is done by the sign of $f*(x)$. 
+ 
+$C$ sets a budget for the sum of errors generated by the partition. If $C=0$, no errors are tolerated, so the hyperplane must use the maximal margin classifier (the thinnest possible margin). For $C > 0$, no more than $C$ observations may be on the wrong side of the hyperplane, since for each such observation $\epsilon_i>0$, so $C$ divided by their sum is less than 1. Higher values of $C$ increase error tolerance and therefore the margin.
+
+As usual, $C$ is chosen by cross-validation and allows control of the bias-variance tradeoff, with lower $C$ resulting in less bias but more variance and higher vice versa.
+
+Conveniently, the only observations that matter to this observation problem are those within the margin or on the wrong side of the hyperplane (since those on the correct side have $\epsilon_i=0$). So changing these observations does not impact the model, so long as they remain on the correct side. Marginal or wrong-side observations do affect the model and are called _support vectors_. 
+
+Higher values of $C$ increase the number of support vectors; with a higher error tolerance, the margin can be wider, so more observations lie on the wrong side and therefore impact the model.
+
+Compared to other methods like LDA, support vectors are quite robust, since they depend only on a few observations. LDA, for instance, depends on class means and covariances. Logistic regression is similarly robust, however.
+
+# Support Vector Machines
+
+We now need to handle nonlinear decision boundaries.
+
+## Classification with Nonlinear Decision Boundaries
+
+For linear regression, the solution to nonlinear relationships is to transform the predictors (polynomials, etc.). We could try this by adding a squared version of each predictor:
+
+\[X_1, X_1^2, X_2, X_2^2,\dots{X_p, X_p^2}\]
+
+The basic optimization problem is now:
+ 
+ \[\text{maximize } M\\
+ \text{subject to }y_i\Bigg(\beta_0 +\sum_{j=1}^p\beta_jx_{ij}+\sum_{j=1}^p\beta_jx^2_{ij}\Bigg)>=M(1-\epsilon_i)\\
+\sum_{i=1}^n\epsilon_i<=C,\epsilon_i>=0,\sum_{j=1}^p\sum_{k=1}^2\beta^2_{jk}=1\]
+
+We still have a single betas vector, but are working with polynomial transformations of the predictors.
+
+The $y_i$ constraint function still indicates the confidence of a classification. The original predictor space's decision boundary was a nonlinear polynomial. This enlarged predictor space simply approximates a polynomial space where the decision boundary _is_ linear.
+
+We could add higher degrees and interaction terms as well. However, this would be computationally infeasible.
+
+## Support Vector Machines
+
+SVMs provide an efficient approach to computation. DOn't bother with the details, but the support vector classifier actually only needs the inner products of the pairs of observations, not the observations themselves, to compute the support vectors. (Inner products are just a generalization of dot products, which only work in $R^n$. Dot products are really projections onto the number line).
+
+So the inner product of any two observations is:
+
+\[\langle{x_i,x_{i'}}\rangle=\sum_{j=1}^px_{ij}x_{i'j}\]
+
+The linear support vector classifier turns out to be:
+
+\[f(x)=\beta_0+\sum_{i=1}^n\alpha_i\langle{x, x_i}\rangle\]
+
+where each of the $n$ training observations has its own parameter $a_n$. We can estimate them just from the $n(n-1)/2$ inner products between all pairs of observations. COnveniently, it is nonzero for only the support vectors (the only ones the model relies on), saving us much computation.
+
+Better still, we can generalize the inner product with a _kernel_, here a function that quantifies the similarity of two observations:
+
+\[K(x_i, x_{i'})\]
+
+We could just define it as the inner product:
+
+\[K(x_i, x_{i'})=\sum_{j=1}^px_{ij}x_{i'j}\]
+
+This would just represent the inner product as a correlation between the pair of observations. This is called a linear kernel.
+
+A polynomial kernel takes the form:
+
+\[K(x_i, x_{i'})=(1+\sum_{j=1}^px_{ij}x_{i'j})^d\]
+where $d$ is a positive integer representing the degree. Using this essentially fits the support vector in polynomial space. (Note we aren't adding lower-degree terms). Support vector machines consist of combining the support vector classifier with a nonlinear kernel:
+
+\[f(x) = \beta_0 +\sum_{i\in{S}}\alpha_iK(x, x_i)\]
+where $K$ is the kernel function.
+We could also use the _radial kernel_, which is defined:
+
+\[K(x_i, x_{i'})=\exp(-\gamma\sum_{j=1}^p(x_{ij}-x_{i'j})^2)\]
+
+$\gamma$ is some positive constant. This equation works by taking the Euclidean distance between the observations. If they are distant, the negative sign of $\gamma$ ensures the LHS - the logarithm of the RHS - is very small (a high negative exponent). Therefore, the transformed support vectors will be very small for distant pairs and high for nearby ones. Since the class prediction is made by the sign of $f^*(x)$, this ensures that only an observation's immediate neighbors play a significant role in its prediction. Higher values of $\gamma$ increase flexibility.
+
+Radial SVMs result in circular decision boundaries (hence the name), polynomial ones in $d-2$ curved boundaries.
+
+The usual tradeoff between bias and variance applies to all these models.
+
+# SVMs with 3 or More Classes
+
+Sadly, hyperplanes are difficult to use for nonbinary classification. There are two workarounds:
+
+## One-versus-One Classification
+
+This method will construct $K(K-1)/2$ SVM's (each with $n(n-1)/2$ support vectors). Each SVM compares a pair of classes, using the same +1 -1 coding scheme. Final classification is done by choosing the most common classification among the pairwise classifications for each observation.
+
+## One-versus-All Classification
+
+This method fits $K$ SVM's, each comparing class $K$ to the remaining $K-1$ classes. Represent the betas used in each iteration as $\beta_{0k}, \beta_{1k},\dots{\beta_{pk}}$. If $x^*$ is a test observation, assignment is made to the class for which $\beta_{0}+\beta_{1K}x^*_1+\beta_{2K}x^*_2\dots+\beta_{pk}x^*_p$ is highest, since this value represents confidence in the prediction.
+
+# Support Vectors and Logistic Regression
+
+The support vector maximization function (the one with $y_i$ way above) can also be rewritten as a _minimization_ problem:
+
+\[\text{minimize}\Bigg\{\sum_{i=1}^nmax[0,1-y_if(x_i)] +\lambda{\sum_{j=1}^p\beta_j^2}\Bigg\}\]
+
+The max expression denotes misclassification; if $y_if(x_i)$ is negative, then its magnitude is added to the function (a correct classification would be 0). $\lambda$ controls the size of the betas and thus the degree of violations to the margin the model tolerates (since high values of $f(x_i)$, dependent on the sum of squared betas, are more likely to fall outside the margin).
+
+This is just a special case of the typical SSE minimization loss function.
+
+\[L(X,y,\beta)=\sum_{i=1}^n\Bigg(y_i-\beta_0-\sum_{j=1}^px_{ij}\beta_j\Bigg)^2\]
+
+The max term of the minimization expression above is called _hinge loss_. As noted, it is only meaningful for misclassified observations. (in this representation, the width of the margin is the sum of sqaured betas). 
+
+For logistic regression, the loss function is never 0, but it is very small far from the decision boundary. The models tend to perform similarly. Classical models could also be fitted using nonlinear kernels, though this is not common. One extension is called support vector regression, where  the loss function ignores residuals whose absolute value is below some constant (essentially a margin).

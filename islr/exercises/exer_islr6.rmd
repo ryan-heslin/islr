@@ -1,0 +1,503 @@
+---
+title: "ISLR Chapter 6 Exercises"
+author: "Ryan Heslin"
+date: "11/16/2020"
+output: html_document
+---
+
+# Conceptual
+
+## 1.
+We perform best subset, forward stepwise, and backward stepwise selection on a single data set. For each approach, we obtainp+1models, containing 0,1,2,...,ppredictors. Explain your answers:(a) Which of the three models with kpredictors has the smallesttrainingRSS?(b) Which of the three models withkpredictors has the smallesttestRSS?(c) True or False:i. The predictors in thek-variable model identified by forwardstepwise are a subset of the predictors in the (k+1)-variablemodel identified by forward stepwise selection.ii. The predictors in thek-variable model identified by back-ward stepwise are a subset of the predictors in the (k+1)-variable model identified by backward stepwise selection.iii. The predictors in thek-variable model identified by back-ward stepwise are a subset of the predictors in the (k+1)-variable model identified by forward stepwise selection.iv. The predictors in thek-variable model identified by forwardstepwise are a subset of the predictors in the (k+1)-variablemodel identified by backward stepwise selection.v. The predictors in thek-variable model identified by bestsubset are a subset of the predictors in the (k+1)-variablemodel identified by best subset selection
+
+a. The best subset selection. Because it tries every model combination, it is guaranteed to find the one with the lowest training RSS (thought he others may as well).
+
+b. It depends on the number of predictors. If it is high, then the best subset approach, because it is exhaustive, is more likely to find a combination that overfits the training data. With fewer predictors, this is unlikely.
+
+i. True. Each $M_{k+1}$ adds another predicotr without removing any
+
+ii. True, for the same reasons.
+
+iii. Not necessarily. Each approach adds/subtracts preds for their RSS improvement relative to the previous iteration, not RSS in a simple regression, which means their paths don't necessairyl converge
+
+iv. False, for the same reasons
+
+v. True, because best subset only ever adds preds.
+
+##2. 
+For parts (a) through (c), indicate which of i. through iv. is correct.Justify your answer.(a) The lasso, relative to least squares, is:i. More flexible and hence will give improved prediction ac-curacy when its increase in bias is less than its decrease in variance.ii. More flexible and hence will give improved prediction accu-racy when its increase in variance is less than its decreasein bias.
+2606. Linear Model Selection and Regularization iii. Less flexible and hence will give improved prediction accu-racy when its increase in bias is less than its decrease invariance.iv. Less flexible and hence will give improved prediction accu-racy when its increase in variance is less than its decreasein bias.(b) Repeat (a) for ridge regression relative to least squares.(c) Repeat (a) for non-linear methods relative to least squares.
+
+Lasso
+
+a i. False; it is less flexible because it removes parameters, though the second part of the statement is generally true.
+
+ii. False. The lasso reduces variance relative to OLS because it adds a constraint.
+
+iii. True, for reasons stated above.
+
+iv. False.
+
+The same sets of statements are correct, though RR does not reduce variacne as much as the lasso becuase it never removes predictors.
+
+Nonlinear Methods
+
+i. False. Nonlinear methods are more flexible and therefore reduce bias at the expense of variance.
+
+ii. True.
+
+iii. False.
+
+iv. False.
+
+This problem looks at the lasso, which constrains the sume of the absolute value of the betas.
+
+
+My initial answers here were wrong; corrections are appended.
+
+(a) As we increases from 0, the training RSS will: i. Increase initially, and then eventually start decreasing in an inverted U shape.ii. Decrease initially, and then eventually start increasing in aUshape.iii. Steadily increase.iv. Steadily decrease.v. Remain constant.(b) Repeat (a) for test RSS.(c) Repeat (a) for variance.(d) Repeat (a) for (squared) bias.(e) Repeat (a) for the irreducible error.
+
+_You have this backward-the higher $s$ is, the MORE freedom you have to estimate the betas
+
+Lasso: 
+a iv. Adding predictors always lowers training RSS, even if they are unreslted to the response. Conversely, removing them, as the lasso does, will increase RSS. _Once s becomes big enough, no predictors are zeroed, leading to the OLS solution._
+
+b. ii. The lasso is more biased than OLS, but the constraint greatly reduces variance. As a result, test RSS falls until reaching a minimum where the model becomes too balanced to be useful. _Actually iii-as s increases, $\lambda$ falls_.
+
+c. iii. Removing predictors lowers variance, since it reduces the number of parameters the model must estimate.
+
+d. iv. The cost of removing predictors is increasing bias - i.e., finding a simpler model than the true function. _Again wrong - bias falls with $s$, since it represents an increasing $\lambda$.
+
+e. iv. This is essentially training RSS, so iv. _Wrong yet again - be definition, irreducible error cannot be explained by any model of the given predictors_.
+
+4. We are then asked to repeat the problem for ridge regression, this time with $\lambda$ increasing instead of $s$. 
+
+a. Steadily increase. Increasing $\lambda$ reduces the effect of predictors, lowering training performance
+
+b. Decrease initially, then start increasing. The bias-variance tradeoff improves test RSS until the minimum of the curve.
+
+c. Steadily decrease. Lowering betas reduces variance.
+
+d. Steadily increase, since reducing betas simpliefies the model
+
+e. Remains constant, for the reasons given above.
+
+#  Applied
+
+## Lab: Subset Slection
+59 salaries are NA, so we drop those rows.
+
+```{r}
+library(ISLR)
+library(tidyverse)
+library(rlang)
+
+hitters <- Hitters
+
+glimpse(hitters)
+map(hitters, ~sum(is.na(.x)))
+hitters <- hitters[complete.cases(hitters),]
+
+```
+
+
+Use leaps library for best subset selection, returning 8-variable models by default. It looks like the tenth model is the best.
+```{r}
+library(leaps)
+
+full <- regsubsets(Salary ~., hitters)
+summary(full)
+
+max_pred <- regsubsets(Salary~., hitters, nvmax = 19)
+
+#Order of addition
+summary(max_pred)$which %>% {.[, rev(order(colSums(.)))]} %>% colnames()
+
+summary(max_pred) %>% {tibble(preds = 1:19, bic = .$bic, cp = .$cp, rss = .$rss, rsq = .$rsq )} %>%
+  pivot_longer(cols = bic:last_col(), names_to = "stat") %>% 
+  ggplot(aes(x = preds, y = value, col = stat)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(.~ stat, scales = "free_y")
+```
+
+Obviously the last model has the best RSS, the first the worst R squared. The tenth minimizes $C_p$.
+
+Black plot rectangles represent variables picked in the model that generated that statistic.
+```{r}
+summary(max_pred) %>% {tibble(preds = 1:19, bic = .$bic, cp = .$cp, rss = .$rss, rsq = .$rsq )} %>% 
+  map(which.min)
+
+plot(max_pred, scale = "adjr2")
+
+```
+
+Forward selection. The three models start to diverge at the seventh predictor.
+```{r}
+fwd <- regsubsets(Salary ~., hitters, nvmax = 19, method = "forward")
+summary(fwd)
+
+backwd <- regsubsets(Salary ~., hitters, nvmax = 19, method = "backward")
+
+map(list(max_pred, fwd, backwd), coef, 7)
+```
+
+## Lab: Ridge regression and the Lasso
+
+We need an explicit model matrix to proceed. The model matrix automatically creates dummies. Then we specify a tuning grid for $/lambda$. I compute the l2 norms of each beta vector. They vary inversely with $\lambda$.
+```{r}
+library(glmnet)
+x <- model.matrix(Salary ~., Hitters)[,-1]
+y <- hitters$Salary
+
+grid <- 10^seq(10,-2,length=100)
+ridge_mod <- glmnet(x, y, alpha = 0, lambda = grid)
+summary(ridge_mod)
+
+map_dbl(as.data.frame(as.matrix(coef(ridge_mod)))[-1,], ~sqrt(sum(.x^2))) %>% 
+  set_names(grid)
+```
+
+Predict for new value of $\lambda$.
+```{r}
+predict(ridge_mod, s = 50, type = "coefficients")[1:20,]
+
+set.seed(1)
+
+inds <- sample(1:nrow(x), nrow(x)/2)
+
+y_test <- y[-inds]
+
+ridge_mod <- glmnet(x[inds,], y[inds], alpha = 0, lambda = grid, thresh = 1e-12)
+
+mse <- mean((predict(ridge_mod, s = 4, newx = x[-inds,]) -y_test)^2)
+```
+
+Does this beat OLS? MSE is about $40000 higher.
+```{r}
+lin_mod <- lm(data = hitters[inds,], Salary ~ .)
+
+ mean((predict(lin_mod, hitters[-inds,]) -hitters$Salary[-inds])^2)
+
+```
+
+We can use cv.glmnet to cross-validate $\lambda$. This gives a min of 408. Then predict the new model with the best lambda.
+```{r}
+cv <- cv.glmnet(x[inds,], y[inds], alpha = 0)
+plot(cv)
+best <- 408
+refined_mod <- glmnet(x, y, alpha =0)
+predict(refined_mod, type = "coefficients", s =best)
+```
+
+The lasso pretty much does the same thing, except alpha = 1.
+
+## 3. PCR and PLS Regression
+
+Note options to scale and cross-validate. Looks very similar to a scree plot. Minimum RMSEP uses $M =16$, but almost all the reduction comes with the first few components.s
+
+```{r}
+library(pls)
+
+mod_pcr <- pcr(Salary~., data = Hitters, subset = inds, scale = TRUE, validation = "CV")
+summary(mod_pcr)
+validationplot(mod_pcr, val.type = "MSEP")
+
+preds <- predict(mod_pcr, x[inds,], ncomp =7)
+
+mean((preds - y[inds])^2)
+
+pcr(Salary ~., data = Hitters, ncomp = 7, )
+```
+
+I won't bother doing PLSR, but the RMSE min is 2 components. It explains almost as much variance as the seven-component model because PLS explains variance in the response variable as well as the predictors.
+
+## 8. 
+In this exercise, we will generate simulated data, and will then usethis data to perform best subset selection.(a) Use thernorm()function to generate a predictorXof lengthn= 100, as well as a noise vectorof lengthn= 100.(b) Generate a response vectorYof lengthn= 100 according tothe modelY=β0+β1X+β2X2+β3X3+,whereβ0,β1,β2,andβ3are constants of your choice.(c) Use theregsubsets()function to perform best subset selectionin order to choose the best model containing the predictorsX,X2,...,X10. What is the best model obtained according toCp,BIC,andadjustedR2? Show some plots to provide evidencefor your answer, and report the coefficients of the best model ob-tained. Note you will need to use thedata.frame()function tocreate a single data set containing bothXandY.
+6.8 Exercises263(d) Repeat (c), using forward stepwise selection and also using back-wards stepwise selection. How does your answer compare to theresults in (c)?(e) Now fit a lasso model to the simulated data, again usingX,X2,...,X10as predictors. Use cross-validation to select the optimalvalue ofλ. Create plots of the cross-validation error as a functionofλ. Report the resulting coefficient estimates, and discuss theresults obtained.(f) Now generate a response vectorYaccording to the modelY=β0+β7X7+,and perform best subset selection and the lasso. Discuss theresults obtained.
+
+Generate data. I choose some absurd betas to amuse myself.
+```{r}
+library(leaps)
+set.seed(1)
+x <- rnorm(n=100)
+e <- rnorm(100)
+y = 3 +7*x +.5*x^2  -3*x^3 + e
+
+dat <- map_dfc(1:10, ~`^`(x, .x)) %>% 
+  set_names(paste0("x^", 1:10)) %>% 
+  mutate(y = y)
+```
+Select models using the three algorithms. All three approaches yield similar results, and need only three predictors (like the true ftuncion.) The best forward model replaces $x^3$ with $x^7$, interestingly, but is otherwise accurate.
+```{r}
+best <- regsubsets(y~., dat, nvmax = 10)
+back <- regsubsets(y~., dat, nvmax = 10, method ="backward")
+fore <- regsubsets(y~., dat, nvmax = 10, method = "forward")
+
+map(list(best, back, fore), summary) %>% 
+  map(~map2(list(.x), c("bic", "cp", "rsq"), ~pluck(.x, .y)) %>% set_names(c("bic", "cp", "rsq"))) %>% 
+  set_names(c("best", "fore", "back")) %>% 
+  map(bind_cols) %>% 
+  map(~mutate(.x, preds = 1:10)) %>% 
+  bind_rows(.id = "Model") %>% 
+  bind_cols() %>% 
+    pivot_longer(cols = c(bic, cp, rsq), names_to = "stat") %>% 
+  ggplot(aes(x = preds, y = value, col = Model))+
+  geom_point()+
+  geom_line()+
+  facet_wrap(stat ~ ., scales = "free_y")
+
+coef(fore, 3)
+```
+
+Now we fit a lasso model and cross-validate. I arbitrarily pick the same lambda values as the textbook in the lab.
+```{r}
+library(glmnet)
+grid <- 10^seq(1,-2, length = 100)
+dat2 <- as.matrix(dat %>% dplyr::select(-y))
+lasso <- cv.glmnet(dat2, y, alpha = 1, lambda = grid, nfolds = 10)
+
+tibble(lambda = lasso$lambda, mse = lasso$cvm, nonzero = lasso$nzero) %>% 
+  ggplot(aes(x = log10(lambda), y = mse)) +
+  geom_point(alpha = .1, aes(size = nonzero)) +
+  geom_hline( yintercept = min(lasso$cvm), linetype = "dashed")+
+  geom_vline(xintercept = log10(lasso$lambda[which.min(lasso$cvm)]))+
+  geom_line(col = "chartreuse") 
+  
+
+```
+
+Refit on full data, extract coefs. The best model gets tthe $x^1$ and $x^3$ coefficients right, but $x^2$ is about half the true value, and several superfluous variables are added.
+```{r}
+best_lasso <- glmnet(dat2, y, alpha = 1)
+predict(best_lasso, s = lasso$lambda.min, type = "coefficients" )
+```
+
+Now we combine best subset and the lasso. the lasso model is strikingly close. The ebst subset includes $X^1$ ine very model, since a has the same distribution as the error term I added. FOr the best susbet selection, the single-preidctor model explained virtually all variation, and the estimates were even closer.
+```{r}
+y <-  3 + 2*dat$`x^7` +rnorm(100)
+dat$y = y
+lasso2 <- cv.glmnet(dat2, y, alpha = 1, lambda = grid)
+best2 <- regsubsets(y ~., dat, nvmax = 10 )
+
+predict(lasso2, s = lasso2$lambda.min, type = "coefficients")
+summary(best2)$rsq
+map2(1:10, list(best2), ~coef(.y, .x))
+```
+
+Next we are asked to consider how increasing $p$ will reduce trainign but not necessarily test error.
+
+a) Generate a data set with p=20features,n=1,000 observations, and an associated quantitative response vector generatedaccording to the modelY=Xβ+,whereβhas some elements that are exactly equal to zero.
+b) Split your data set into a training set containing 100 observationsand a test set containing 900 observations.
+
+I set up data.
+
+```{r}
+set.seed(1)
+betas <- sample(-5:5, 20, replace = TRUE)
+betas[sample(1:20,5, replace = FALSE)] <- 0
+data <- replicate({
+  rnorm(mean = sample(-10:10, size = 1), sd = sample(1:5, size =1), n = 1000)},
+  n = 20)
+
+y <- data %*% betas +rnorm(100, mean = 10, sd = 5)
+
+inds <- sample(nrow(data), 100, replace = FALSE)
+train <- data[inds,]
+test <- data[-inds,]
+```
+
+We have to manually compute RMSE, which is irritating. The map here finds the betas and multiplies by appropriate predictors.
+```{r}
+train <- data.frame(train, y = y[inds])
+best <- regsubsets(y~., train, nvmax = 20)
+
+errors <- map_dbl(1:20,function(x){
+  int <- coef(best, x)[1]
+  pred <- as.matrix(train)[,names(coef(best, x))[-1], drop = FALSE]
+  betas <- as.matrix(coef(best,x)[-1])
+  fit <- pred %*% betas + int
+  mse <- mean((y[inds] - fit)^2)
+  mse
+})
+
+tab <- tibble(preds = 1:20, mse = errors, improvement = cumsum(mse - lead(mse, default = min(mse)))/(max(mse) -min(mse))) 
+ p1 <- tab %>%  ggplot() +
+  geom_line(aes(x = preds, y = mse, col = mse))+
+  geom_point(aes(x = preds, y = mse, col = mse)) +
+  scale_color_gradient(low = "green", high = "red")+
+  scale_x_continuous(breaks = 1:20) +
+  scale_y_continuous(trans = "log10") +
+   theme(legend.position = "bottom")+
+   labs(title = "Training MSE by Model")
+
+p2 <- tab %>% ggplot(aes(x = preds, y = improvement, group =1)) +
+  geom_step(col = "red") +
+  scale_y_continuous(limits = c(0,1)) +
+  ggtitle("Training MSE Improvement")
+
+gridExtra::grid.arrange(p1, p2, ncol =2)
+```
+Now repeat all this for the test set. MSE declines at about the same rate, but it starts creeping up once the five irrelevant predictors (with betas of 0) get added.
+
+```{r}
+test <- data.frame(test)
+errors <- map_dbl(1:20,function(x){
+  int <- coef(best, x)[1]
+  pred <- as.matrix(test)[,names(coef(best, x))[-1], drop = FALSE]
+  betas <- as.matrix(coef(best,x)[-1])
+  fit <- pred %*% betas + int
+  mse <- mean((y[-inds] - fit)^2)
+  mse
+})
+
+tab <- tibble(preds = 1:20, mse = errors, improvement = cumsum(mse - lead(mse, default = min(mse)))/(max(mse) -min(mse))) 
+ p1 <- tab %>%  ggplot() +
+  geom_line(aes(x = preds, y = mse, col = mse))+
+  geom_point(aes(x = preds, y = mse, col = mse)) +
+  scale_color_gradient(low = "green", high = "red")+
+  scale_x_continuous(breaks = 1:20) +
+  scale_y_continuous(trans = "log10") +
+   theme(legend.position = "bottom")+
+   labs(title = "Test MSE by Model")
+
+p2 <- tab %>% ggplot(aes(x = preds, y = improvement, group =1)) +
+  geom_step(col = "red") +
+  scale_y_continuous(limits = c(0,1)) +
+  ggtitle("Test MSE Improvement")
+
+gridExtra::grid.arrange(p1, p2, ncol =2)
+```
+The 14-predictor model has the lowest test error. The estimated coefficients are all within .5 of the true value. The intercept, however, is badly off.
+```{r}
+which.min(errors)
+
+comparison <- tibble(Term =c("(Intercept)", paste0("X", 1:20)), True = c(3, betas)) %>% left_join(enframe(coef(best, 14)), by = c("Term"="name")) %>% 
+  mutate(Difference = True - value)
+```
+
+We are now asked to plot the sqaure root of the sqaured errors of the beta estimates for each model with $j$ predictors - the distance of the variances vector
+
+The sum of beta errors rises for the first few models before plummeting. Unlike the test MSE plot, the error slowly declines as more predictors are added, even past the theoretically ideal 15-predictor model. I suppose adding the false betas improves the estimates of the others enough to reduce overall error.
+For the most part, it looks like the zero betas were the last added.
+
+```{r}
+stem <- comparison %>% dplyr::select(., Term, True)
+beta_errors <- map_dbl(1:20, function(j){
+  
+  diffs <- inner_join(stem, enframe(coef(best, j)),
+             by = c("Term"="name")) %>%
+    dplyr::select(-Term) %>% 
+    reduce(`-`)
+  
+    sqrt(sum(diffs^2))
+})
+
+tibble(preds =1:20, beta_errors) %>% ggplot(aes(x = preds, y = beta_errors^2)) +
+  geom_point()+
+  geom_line()
+
+map(1:20, ~coef(best, .x)[-1]) %>% 
+  map(names) %>%
+  reduce(~c(.x, .y)) %>% 
+  table() %>% 
+  sort(decreasing = TRUE)
+
+which(betas ==0)
+```
+
+# 11.
+
+The last problem asks us to predict per capita crime in Boston. We'd expect home values to be negatively correlated with crime and variables like nitrous oxide and lower-status population to be postively correlated. Suprisingly, tax rate and highway proximity have the strongest correlations.
+
+They are much stronger for the small susbet with $\text{chas}=1$ (on the Charles River.)
+
+Black is actually 1000 times the sqaured differnce of proportion black and  .063 - presumably the mean
+
+```{r}
+library(MASS)
+library(corrplot)
+
+inds <- sample(nrow(Boston), nrow(Boston) /2, replace = FALSE)
+boston = Boston
+
+cor(Boston) %>% corrplot()
+
+split(Boston, Boston$chas) %>% 
+  map(cor)
+
+map(Boston, sd)
+
+glimpse(boston)
+```
+
+Crime has an extreme right skew. Log-transforming reveals a bimodal distribution. All the high-crime rows have the same proportion of non-retail business acreage and no land zoned for lots over 25000 square feet. Many have 100+-year-old housing stock. They also seem to correspond to the heavily left-skewed black distribution. 
+```{r}
+boston %>% ggplot(aes(crim))+
+  geom_density()
+
+boston %>% ggplot(aes(log(crim)))+
+  geom_density()
+
+boston %>% ggplot(aes(black))+
+  geom_density()
+boston %>% slice_max(crim, prop=.1)
+```
+
+Best subset selection barely makes a difference in training RSS. The sixth seems to do best on the criteria, though none stands out.
+```{r}
+mod_sub <- regsubsets(crim~., boston %>% scale %>% as.data.frame(), nvmax = ncol(Boston) - 1)
+
+regsubset_mse <- function(mod, dat, y){
+  #browser()
+  out <- map_dbl(seq(1, mod$np-1), function(x){
+    int <- coef(mod, x)[1]
+    pred <- as.matrix(dat)[,names(coef(mod, x))[-1], drop = FALSE]
+    betas <- as.matrix(coef(mod,x)[-1])
+    fit <- pred %*% betas + int
+    mse <- mean((y - fit)^2)
+    mse
+  })
+out
+}
+regsubset_mse(mod_sub, scale(boston)[inds,], scale(boston$crim)[inds])
+
+
+coef(mod_sub, 6)
+```
+
+On to a lasso mdeol, which may be useful given irrelevant predictors.
+Observing the best lambdas are about .05, I refit using lambdas around that range. Minimum RMSE is around .5, about the same as the ebst subset model
+```{r}
+
+X <- model.matrix(crim ~., boston)[,-1]
+Y <- boston$crim 
+inds <- sample(seq(1, nrow(boston)), nrow(boston)/2, replace = FALSE)
+grid <- 10^seq(10, -2, length.out = 150)
+lasso_mod <- cv.glmnet(x = X[inds,] %>% scale, y = Y[inds] %>% scale, alpha =1, lambda = grid, nfolds = 10 )
+
+plot(lasso_mod)
+
+grid <- seq(.001, .05, length.out = 200)
+lasso_mod <- cv.glmnet(x = X[inds,] %>% scale, y = Y[inds] %>% scale, alpha =1, lambda = grid, nfolds = 10 )
+plot(lasso_mod)
+```
+
+Finally, let's try principal components. Train RMSE is terrible, even if we add components, suggesting sparse data.
+```{r}
+mod_pcr <- pcr(crim~., data = boston[inds,], scale = TRUE, validation = "CV", ncomp =3)
+summary(mod_pcr)
+validationplot(mod_pcr, val.type = "MSEP")
+
+mean((mod_pcr$fitted.values -scale(Y)[inds])^2)
+```
+I validate the lasso and best subset models. They have roughly the same MSE, about .65 standard units I don't think either model is very good.
+```{r}
+mean((predict(lasso_mod, s = lasso_mod$lambda.min, newx = scale(X)[-inds,]) -scale(Y)[-inds])^2)
+
+regsubset_mse(mod_sub, scale(boston)[-inds,], scale(Y)[-inds])
+```
+
+
+
+

@@ -1,0 +1,186 @@
+---
+title: "ISLR Chapter 6 Notes"
+author: "Ryan Heslin"
+date: "1/12/21"
+output: html_document
+---
+
+# The Challenge of Unsupervised Learning
+
+# Review Questions
+1. What is the primary difficulty of unsupervised compared to supervised learning?
+2. What is the fundamental difference between hierarchical and K-means clustering?
+3. In what situation will hierarchical clustering give misleading results?
+4. What algorithm does K-means clustering use?
+5. What different means of defining distance can be used?
+6. How can a dendrogram be interpreted?
+
+Unsupervised learning involves analyzing only predictors, with no reference to the response. This invovles several difficulties:
+
+1. No clear goal or metric for success beyond general EDA
+2. No universally accepted means of cross-validation
+
+# Principal Components Analysis
+
+PCA, as you will recall, projects the data onto an orthogonal subspace consisting of $m$ eigenvectors. (All eigenvectors are orthogonal to each other). Its main use in EDA is to avoid the $p(p-1)/p$ combinations of predictors needed for informative scatterplots. Each component captures all the variation in a dimension; we plot only the few dimesnions that contain the most variation. Each diemsnion is of course a a vector of correlations between one predictor and the others, where the sum is total variance in standard units (since the off-diagonals are standardized dot products of sqaured deviations).
+
+You took far too many notes on PCA elsewhere. PCA can be approached as an optimization problem:
+
+\[\text{maximize }\Bigg\{\frac{1}{n}\sum_{i=1}^n\Big(\sum_{j=1}^p\phi_{j1}x_{ij}\Big)^2\Bigg\}\text{ subject to }\sum_{j=1}^p\phi^2_{j1}=1\]
+
+in other words, maximizing the varaince of a linear combination of the predictors and a unit-length vector (the PC scores). 
+
+Since each component must be uncorrelated with the previous ones (both as a property of positive semidefinite eigenvectors and a constraint of the optimization function), they provide a basis for projecting the data. There are actually $\min(n-1, p)$ PC's.
+
+PC's can be plotted to visualize correlations in the data:
+
+```{r}
+library(ggfortify)
+library(tidyverse)
+mtprc <- mtcars %>% prcomp(scale = TRUE)
+
+autoplot(mtprc)
+```
+
+For example, a PCA of crime data yields two strong components: one representing crime types (murder, rape, etc.), the other state urbanization.
+
+## Another Interpretation of PCA
+
+PC's can also be seen as lines minimizing distance _from_ the observations. This is obvious from the nature of orthogonal projections: by maximizing the proportion of each observation vector in the component subspace $i$, we minimize the orthogonal error $e$, since $e + i = b$. The first component is the best possible single-variable approximation of the data. Two components will form a _plane_ minimally distant from the observations, and so forth. No better linear combination exists.
+
+This also means the data can be approximated from the scores and loadings, or exactly recreated if $m=p$:
+
+\[X\approx{Z{\phi}}\]
+
+## More on PCA
+
+Beware - results may vary if scaling is not performed. (This is not the case with linear regression, which involves a purely linear transformation. The covariance matrix from which components are derived is also a linear combination, hence the problem). 
+
+The signs of PC vectors can be flipped arbitrarily, since projections are performed onto a line which, having infinite length, has no signed direction. Since $Var(Z)=Var(-Z)$, this is true of PC scores as well.
+
+The variance explained by the $mth$ component is:
+
+\[\frac{1}{n}\sum_{i=1}^n\]
+or the average of the sum of squares of the scores. This is divided by total variance to get the proportion of variance explained.
+
+There is no universal standard for choosing the number of components. Usually, only a few are chosen; if they capture plenty of variance, there is no need for more, and if not there is not enough correlation to warrant PCA. If we are using PC regression, however, we can treat $m$ as a tuning parameter and cross-validate.
+
+# Clustering
+
+Clustering describes many techniques for grouping datasets into groups whose members are similar to each other and different from other groups. This is what ANOVA assesses. This requires us to decide what differences among the data are meaningful. Often, we are looking to discover a latent grouping structure not obvious from the predictors, such as types of cancer present in tissue samples. 
+
+K-means clustering attempts to partition observations into a specified number of clusters. Hierarchical clustering does not specify a number of clusters and instead develops possible clusters for the whole range from 1 to $n$.
+
+Note $C_k$, the number of observations in a cluster, may differ by cluster.
+
+There are two different approaches: clustering observations by features to discover subgroups among observations, or the converse: clustering features by observations to discover subgroups among the features. 
+
+## K-Means Clustering
+
+To use this technique, we simply specify $K$ clusters and run the algorithm. 
+
+Each set of observations in each cluster $C_i$ must satisfy:
+
+1. \[ C_1\cup{C_2}\cup\dots\cup{C_k}= \{1,\dots,n\}\]
+2. \[C_k\cap{C_{k`}}=\varnothing\]
+
+The first property guarantees an observation belongs to _at least_ one cluster, the second that each belongs to _at most_ one. The clusters are comprehensive and distinct.
+
+Good K-means fits minimize total within-cluster variation:
+
+\[\text{minimize }\Bigg\{\sum_{k=1}^KW(C_k)\Bigg\}\]
+
+There are many ways to define withing-cluster variation, but the simplest is average squared Euclidean distance among observations:
+
+\[W(C_k)=\frac{1}{|C_k}\sum_{i,i'\in{C_k}}\sum^p_{j=1}(x_{ij}-x_{i'j})^2\]
+
+where $|C_k$ is the number of observations in that cluster. Note these are pairwise distances, not distances from the mean.
+
+\[\text{minimize }\Bigg\{\sum_{k=1}^K\frac{1}{|C_k}\sum_{i,i'\in{C_k}}\sum^p_{j=1}(x_{ij}-x_i'j)^2\Bigg\}\]
+
+Finding the optimal of the early $K^n$ partitions is nigh impossible, but a pretty good algorithm exists:
+
+1. Randomly assign each observation a number from 1 to $K$ as an initial cluster assignment.
+2. Until assignments stabilize:
+a. For each cluster, compute the _centroid_: the $p$-length vector of predictor means for that cluster.
+b. Assign each observation to the cluster with the closest centroid by Euclidean distance.
+
+In other words, each observation is assigned to the cluster that minimizes its total deviation from that cluster's average.
+
+THis works because of the following identity:
+
+\[\frac{1}{|C_k}\sum_{i,i'\in{C_k}}\sum^p_{j=1}(x_{ij}-x_i'j)^2=2\sum_{i\in{C_k}}\sum_{j=1}^p(x_{ij} - \bar{x_{kj}})^2\]
+
+So the average pairwise distance is twice the sum of all pointwise squared distances from the cluster mean. This follows from the definition of the cluster mean $\frac{1}{C_k}\sum_{i\in{C_k}}x_{ij}$. The mean by definition minimizes the sum of squared deviations, so assigning to the nearest cluster mean can only improve the fit. Iteration continues until improvement stalls out and a local maximum is reached.
+
+Since the algorithm can only find a local optimum, it must be run multiple times with different initial allocations of random cluster assignments. From these, the one with minimum error is selected.
+
+Selecting the right $K$ is a hard problem, best informed by domain knowledge.
+
+## Hierarchical Clustering
+
+Hierarchical clustering differs from K-means in that it does not require a choice of an initial $K$. With the bottom-up approach, the model builds a tree diagram in reverse, starting from the leaves and proceeding upward. 
+
+###Interpreting Dendrograms
+
+Each leaf of the dendrogram represents an observation. Moving up the tree, leaves join into branches representing clusters of similar observations. Closer observations fuse closer to the bottom of the dendrogram. The vertical axis indicates the total between clusters joined up to that point, so the most dissimilar observations join at the top of the dendrogram.
+
+Proximity along the horizontal axis is meaningless. There are $2^{n-1}$ possible orderings of leaves, since the order of the two branches at each fusion is arbitrary. So an observations's closeness to another in lateral distance does not suggest similarity. Put differently, every observation under one branch (and descending branches) of a fusion point has about the same similarity to every observation under the other branch.
+
+TO identify clusters, we cut the dendrogram horizontally at some point on the vertical axis. The uppermost branches beneath the cutpoint are the clusters, each containing observations in its leaves. The lower on the scale the cut, the more clusters; the extremes are $n$ (the bottom) and 1 (the top). The choice of cut height is analogous to $K$ for K-means. Conveniently, the decision can be made after the dendrogram is produced and chosen simply by eye.
+
+Hierarchy (clusters nested within clusters) is not always a sound assumption. Optimal splits might cut across intersecting groups, such as people of both genders in three nationalities. In the case, a different algorithm should be chosen.
+
+
+## The Hierarchical Clustering Algorithm
+
+This one is dead simple. Some dissimilarity measure has to be chosen, usually Euclidean distance.
+
+1. Assign each $n$ observation to its own cluster.
+2. Fuse the two closet clusters, yielding $n-1$ clusters, at the height corresponding to the measure of dissimilarity on the y-axis
+Recompute pairwise dissimilarities among clusters
+3. Repeat until one cluster remains, adding the distance of each pair of fused clusters to the sum of previous ones on the y-axis.
+
+This is a regression tree in reverse: instead of looking for splits that explain maximum variance and working down, we unite similar observations one by one and work up.
+
+The one complication is how to measure similarity between pairs of clusters, not just pairs of observations. Several different concepts of _linkage_ exist to quantify this similarity. Of the types, average and complete are preferred. Centroid linkage can sometimes suffer _inversion_: fusing clusters below the individual height of either, since it is dependent on means.
+
+```{r}
+tibble(Complete = "Highest pairwise dissimilarity among observations in clusters A and B", Single = "Smallest pairwise dissimilarity among observations in clusters A and B", "Average" = "Mean of pairwise dissimilarites among clusters A and B", "Centroid" = "Dissimilarity between mean vectors for clusters A and B") %>% pivot_longer(everything(), names_to = "Linkage", values_to = "Description") %>% 
+  knitr::kable()
+```
+
+## Choosing The Dissimilarity Measure
+
+In addition to linkage, there is also the choice of how to measure dissimilarity. One alternative to Euclidean distance is correlation. This approach correlates the predictors within the observation (i.e., dot product of deviations from predictor means). Correlation emphasizes relative variation (i.e., direction of deviations from the  predictor means) over the actual data values, since correlation ignores units.
+
+If the data are not scaled, then variables with higher scales will have more impact on the model fit. This is true of k-means as well.
+
+## Practical Issues in Clustering
+
+### Small Decisions, Big Consequences
+
+Clustering requires the analyst to make many decisions, each of which drastically impacts the resulting model:
+
+1. Scaling of data
+
+2. For hierarchical clustering:
+
+a. Dissimilarity measure
+b.Linkage
+c. Dendrogram cutpoints
+
+3. For K-means, $K$
+
+In practice, multiple approaches should be tried.
+
+## Validating the Clusters
+
+It's hard to tell whether the clusters reflect true grouping or arise from noise. There is no consensus on how to assess the significance of the clusters obtained
+
+
+### Odds and Ends
+
+Clustering assumes every observation belongs to a cluster, but outliers may in fact not truly belong to any. Clustering, unlike SVM, is not at all robust; results vary dramatically by different subsets.
+
+Best practices are to experiment with different parameters, check results for consistent patterns, and repeat clustering on subsets to assess robustness. This provides a sound basis for further analysis.

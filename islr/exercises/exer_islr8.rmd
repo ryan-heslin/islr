@@ -1,0 +1,424 @@
+
+
+# Lab
+
+## Classfication Trees
+```{r}
+library(tree)
+library(tidyverse)
+library(ISLR)
+library(rlang)
+
+carseats <-  Carseats
+carseats$High <- factor(ifelse(carseats$Sales <=8,"No","Yes"))
+```
+
+For trees, deviance is
+
+\[-2\sum_m\sum_kn_{mk}\log\hat{p}_{mk}\]
+
+Smaller is better. Residual mean deviance is deviance divided by $n - |T_0|$
+```{r}
+carseats_tree <- tree(formula = High~. -Sales, data = carseats)
+
+summary(carseats_tree)
+```
+
+Trees are easy to plot, thankfully.
+
+```{r}
+plot(carseats_tree)
+text(carseats_tree, pretty=0)
+```
+
+
+What is test error?
+```{r}
+set.seed(2)
+inds <- sample(1:nrow(carseats), 200)
+train <- carseats[inds,]
+test <- carseats[-inds,]
+actual <- carseats$High[-inds]
+
+tree_carseats <- tree(High~.-Sales, carseats, subset = inds)
+preds <- predict(tree_carseats, test, type = "class" )
+
+table(preds, actual)
+table(preds, actual) %>% {sum(diag(.))}/200
+```
+
+We should prune the tree to check if fit improves. Set FUN=prune.misclass to use classification error as the criterion (default deviance). The function reports size and error rate of each tree, as well as $k$ (or $\alpha$), the complexity penalty.
+
+
+```{r}
+set.seed(3)
+cv_carseats <- cv.tree(tree_carseats, FUN = prune.misclass)
+cv_carseats
+
+tibble(cv_carseats$size, cv_carseats$dev) %>% 
+  ggplot(aes(x = cv_carseats$size, y = cv_carseats$dev)) +
+  geom_point()+
+  geom_line()
+
+```
+
+```{r}
+carseats_pruned <- prune.misclass(tree_carseats, best = 9)
+plot(carseats_pruned)
+text(carseats_pruned, pretty = 0)
+```
+
+```{r}
+pruned_pred <- predict(carseats_pruned, test, type = "class")
+table(pruned_pred, actual)
+table(pruned_pred, actual) %>% {sum(diag(.))/sum(.)}
+```
+A higher number of nodes in this case results in a bigger tree with worse test error.
+
+
+## Regression Trees
+
+Not much to see here. Deviance for regression is just SSE.
+```{r}
+Boston <- MASS::Boston
+
+set.seed(1)
+train <-  sample(1:nrow(Boston), nrow(Boston)/2)
+
+tree.boston <- tree(medv∼. , data = Boston , subset=train)
+
+summary(tree.boston)
+```
+```{r}
+plot(tree.boston)
+text(tree.boston, pretty = 0)
+```
+Looks like the more complex tree is best here.
+```{r}
+cv.boston <- cv.tree(tree.boston)
+plot(cv.boston$size, cv.boston$dev, type = "b")
+```
+RMSE not so bad.
+```{r}
+test <- Boston[-train,]
+actual <- test$medv
+boston_pred <- predict(tree.boston, newdata = test)
+sqrt(mean((boston_pred-actual)^2))
+```
+
+## Bagging
+
+Mtry is variables to use for each split - since we use all 13, this is bagging rather than a true random forest.
+```{r}
+library(randomForest)
+set.seed(1)
+train <- sample(nrow(Boston), nrow(Boston) / 2)
+test <- Boston[-train,]
+
+bos_bag <- randomForest(medv ~ ., data = Boston, subset = train, mtry = 13, importance = TRUE)
+
+bos_bag
+```
+
+The model did well, but badly undershot high values.
+```{r}
+bag_pred <- predict(bos_bag, newdata = test)
+tibble(actual = test$medv, pred = bag_pred) %>% 
+  ggplot(aes(x = actual, y = pred)) +
+  geom_point() +
+  geom_abline()
+```
+
+MSE is higher than the ISLR authors report, for some reason.
+```{r}
+mean((bag_pred - test$medv)^2)
+```
+You could also grow fewer trees. It barely worsens MSE.
+```{r}
+bos_bag2 <- randomForest(medv ~., data = Boston, subset = train, mtry = 13, ntree = 25, importance = TRUE)
+```
+
+Random forests just use different values of mtry. By default, randomForest uses $p/3$ for regression and $/sqrtp$ for classification.
+
+We improve substantially over bagging.
+
+```{r}
+rf_boston <- randomForest(medv ~., data = Boston, subset = train, mtry = 6, importance = TRUE)
+
+pred <- predict(rf_boston, newdata = test)
+mean((pred-test$medv)^2)
+```
+Importance of predictors. The first column is mean accuracy decrease for omitting that predictor, the second the total decrease in node impurity (for regression, train RSS; for classification, deviance) achieved by splitting on that variable
+```{r}
+importance(rf_boston)
+varImpPlot(rf_boston)
+```
+
+Note distribution type - would be Bernoulli for classification.
+
+## Boosting
+
+```{r}
+library(gbm)
+set.seed(1)
+bos_boost <- gbm(medv ~ ., data = Boston[train,], distribution = "gaussian", n.trees = 5000, interaction.depth = 4)
+summary(bos_boost)
+```
+
+These are partial dependence plots for two variables - they show the impact on the response holding all others constant.
+
+```{r}
+par(mfrow = c(1,2))
+plot(bos_boost, i = "rm")
+plot(bos_boost, i = "lstat")
+```
+
+Use shrinkage arg to set $\lambda$ (shrinkage on backfitted trees).
+```{r}
+boost.boston <- gbm(medv∼., data=Boston[train,], distribution="gaussian", n.trees=5000, interaction.depth=4, shrinkage=0.2, verbose=F)
+```
+
+
+# Conceptual Problems
+
+## 2.
+We are reminded boosting with stumps creates an additive model:
+
+\[f(X)=\sum_{j=1}^pf_j(X_j)\]
+
+that is, the sum of a separate function applied to each predictor. This occurs because each stump must use only one predictor. So the final model consists of the sum of sums of shrunken stumps fitted one each predictor. Say each predictor gets k splits:
+
+\[f(x) = \sum_{j=1}^p\sum_{k=1}^k\lambda{f_k(X_j)}\]
+
+
+## 5.
+
+We have 10 bootstrapped sample probabilities for $P(Red|X)$, where there are two classes:
+
+```{r}
+probs <- c(.1,.15,.2,.2,.55,.6,.6,.65,.7,.75)
+
+maj <- ifelse(sum(probs >.5), "red", "green")
+avg <- ifelse(mean(probs) > .5, "red", "green")
+```
+
+Classifications are different. We see using majority vote ignores the model's confidence in the classification (the probability).
+
+## 4. 
+Explain the regression tree algorithm.
+
+First, a number of $J$ regions (giving $J-1$ splits) is selected. For the initial split, every possible split over each predictor is considered; the one chosen minimizes the combined SSE (the sum of the two regions' sum of sqaured deviations of each region's response values' deviations from that region's mean [or some other fit method]). Then we consider possible splits of the two regions, and perform the best by the same criterion. This repeats, considering all $n+1$regions of iteration $n$, until an exhaustion criterion (usually number of observations in each terminal node) is reached. Critically, _only one split is ever made at each step_ - this saves resources but rules out splits that yield poor initial SSE improvement but would result in better trees following additional splits.
+
+
+
+## 6.
+Try different mtry for Boston. More fun with quasiquotation.
+```{r}
+library(randomForest)
+set.seed(1)
+grid <- expand_grid(mtry = 1:11, ntree = seq(50, 500, by = 50))
+boston <- MASS::Boston
+train <- slice_sample(boston, n = nrow(boston)/2)
+test <- anti_join(MASS::Boston, train)
+actual <- test$medv
+
+# No more silliness
+call <- quote(randomForest(data = train,  medv~.-chas-zn, importance = TRUE))
+
+forests <- map2(grid$mtry, grid$ntree, ~eval(call_modify(call, !!!list(mtry = .x, ntree = .y)))) %>% 
+  set_names(reduce(grid, paste, sep = "-"))
+
+preds <- map(forests, predict, newdata = test) %>% 
+  map_dbl( ~mean((.x-test$medv)^2))
+
+
+```
+
+Totally irrelevant to ISLR, but here's a function I wrote that assigns a symbol bound to a symbol to a symbol bound to another symbol. R is amazing.
+```{r}
+# More stupid quasiquotation games
+xzibit_assign <- function(expr, val){
+  eval(bquote(.(substitute(expr)) <- .(val)))
+  
+}
+
+
+```
+
+It seems just a few variables led to the best MSE trees.
+
+```{r}
+preds %>% enframe(name = "temp", value = "MSE" ) %>% 
+  separate(temp, sep = "-", into = c("mtry", "ntree")) %>% 
+  mutate(across(everything(), as.numeric)) %>% 
+  ggplot(aes(x = ntree, y = mtry, fill = MSE)) +
+  geom_tile(col = "white") +
+  scale_fill_gradient()
+
+```
+
+##8.
+
+This problem asks us to use classification on Carseats.
+```{r}
+carseats <- ISLR::Carseats 
+train <- slice_sample(carseats, n = nrow(carseats)/2)
+test <- anti_join(carseats, train)
+
+carseats1 <- tree(Sales ~ ., data = train)
+plot(carseats1)
+text(carseats1, pretty = 0)
+
+```
+
+MSE is about 5, about a third the variable's range. Not good.
+```{r}
+pred <- predict(carseats1, newdata = test)
+
+mse <- function(pred, response){
+  mean((pred-response)^2)
+}
+
+mse(pred, test$Sales)
+summary(carseats$Sales)
+```
+
+12 leaves is best. Time for some pruning.
+
+```{r}
+alphas = 1:10
+cv.tree(carseats1) %>%
+  {tibble(size = .$size, dev = .$dev, k = .$k)}  %>% 
+  arrange(dev)
+```
+
+Improvement in MSE is marginal over the original tree.
+
+```{r}
+carseats2 <- prune.tree(carseats1, best = 12)
+
+mse(predict(carseats2, test), test$Sales)
+```
+A simple bagged model halves MSE! Removing weak predictors worsens MSE, however.
+```{r}
+library(randomForest)
+
+carseats_bag <- randomForest(data = train, mtry = ncol(carseats)-1, Sales ~ ., ntree = 1000)
+carseats_bag
+importance(carseats_bag)
+
+mse(predict(carseats_bag, test), test$Sales)
+
+carseats_bag2 <- randomForest(data = train, Sales ~ . - US - Urban, ntree = 1000)
+
+mse(predict(carseats_bag2, test), test$Sales)
+```
+A random forest drops MSE a bit more. It seems the optimal mtry is about 8.
+
+```{r}
+carseats_rf <- randomForest(data = train, mtry = 8, Sales ~ ., ntree = 1000)
+
+mse(predict(carseats_rf, test), test$Sales)
+```
+
+## 9.
+
+We are now asked to predict purchases of orange juice, using pruning to refine the tree.
+
+Classification error is about 15%, more than double the naive classifier.
+
+Brand loyalty is by far the most critical predictor.
+
+```{r}
+library(tree)
+OJ <- ISLR::OJ
+
+inds <- sample(nrow(OJ), 800)
+train <- OJ[inds,]
+test <- OJ[-inds,]
+
+OJ_tree <- tree(data = train, Purchase ~.)
+summary(OJ_tree)
+mean(train$Purchase == "MM")
+
+plot(OJ_tree)
+text(OJ_tree)
+```
+
+Accuracy is a decent 80%.
+```{r}
+OJ_pred <- predict(OJ_tree, test, mode = "response") %>% as.data.frame()
+OJ_pred <- with(OJ_pred, factor(ifelse(CH > MM, "CH", "MM")))
+
+table(OJ_pred, actual = test$Purchase) %>% 
+  {1-sum(diag(.))/sum(.)}
+```
+
+5 or 6 nodes is best. I would plot the classification error if the function worked properly.
+
+Training error is worst, as we'd expect.
+```{r}
+cv.tree(OJ_tree)
+pruned <- prune.tree(OJ_tree, best = 5)
+summary(pruned)
+```
+
+But so is test error, surprisingly.
+```{r}
+pruned_pred <- predict(pruned, test, mode = "response") %>% as.data.frame()
+pruned_pred <- with(pruned_pred, factor(ifelse(CH > MM, "CH", "MM")))
+
+table(pruned_pred, actual = test$Purchase) %>% 
+  {1-sum(diag(.))/sum(.)}
+```
+
+## 11.
+
+This problem asks us to use boosting on Caravan. The function is so dumb it doesn't understand factors.
+
+A few predictors are drastically more important than others.
+
+```{r}
+library(gbm)
+caravan <- ISLR::Caravan
+inds <- sample(nrow(caravan), 1000)
+train <- caravan[inds,]
+test <- caravan[-inds,]
+
+car_boost <- gbm(data = caravan %>% mutate(Purchase = as.numeric(Purchase) - 1), Purchase ~ ., n.trees = 1000, shrinkage = .01, distribution = "bernoulli" )
+
+summary(car_boost) %>% filter(rel.inf > 0) %>%
+  mutate(row = rev(seq(1, nrow(.)))) %>% 
+  ggplot(aes(x = log2(rel.inf), y = fct_reorder(factor(var), rel.inf))) +
+  geom_point(alpha = .5, col = "deepskyblue") +
+  geom_step(aes(y=row)) +
+  labs(y = "Variable")+
+  theme(axis.text.y = element_text(size = 7))
+  
+```
+
+The model is decently accurate but neither sensitive nor specific (many false negatives and false positives). It has little use as is, given prior probabilities.
+```{r}
+car_pred <- predict(car_boost, newdata = test, type = "response")
+car_pred <- factor(ifelse(car_pred >=.2, "Yes", "No"))
+
+table(car_pred, actual = test$Purchase)
+```
+Still, a binomial model does much worse.
+
+```{r}
+
+vars <- summary(car_boost) %>% filter(rel.inf > 1) %>% pull(var) 
+form <- formula(paste("Purchase ~", paste(vars, collapse = " + ")))
+
+car_glm <- glm(train, formula = form, family = "binomial")
+summary(car_glm)
+
+car_pred2 <- predict(car_glm, test, type = "response") %>% 
+  as.numeric() %>% 
+  {factor(ifelse(. >=.2, "Yes", "No"))}
+
+table(car_pred2, actual = test$Purchase)
+```
+
+

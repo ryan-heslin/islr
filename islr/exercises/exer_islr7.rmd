@@ -1,0 +1,654 @@
+---
+title: "ISLR Chapter 7 Exercises"
+author: "Ryan Heslin"
+date: "12/2/2020"
+output: html_document
+---
+
+# Labs
+
+
+## Non-Linear Modeling
+
+### Polynomial Models
+
+We start with a simple polynomial model. Note that poly() returns columns forming the basis of orthogonal polynomials. Setting raw = TRUE gives the raw polynomials, though this has no effect on the fit.
+```{r}
+library(ISLR)
+library(tidyverse)
+library(rlang)
+
+wage <- Wage
+
+fit1 <- lm(wage ~poly(age, 4), data = wage)
+summary(fit1)
+coef(summary(fit1))
+
+fit2 <- lm(wage ~poly(age, 4, raw = TRUE),data = wage)
+coef(summary(fit2))
+
+```
+
+```{r}
+
+grid <- seq(min(wage$age), max(wage$age))
+pred <- predict(fit1, newdata = list(age = grid), se = TRUE)
+
+tibble(age = grid, pred = pred$fit ) %>% 
+  ggplot(aes(x = age, y = pred)) +
+  geom_line()+
+  geom_point()
+```
+Now fit models of varying degree and use F-tests, which compare each model $M$ to $M+1$, a model with an extra predictor. I use some quasiquotation because I can. Here, the p-value passes below significance for the fourth model, so a quartic fit is sufficient.
+```{r}
+library(rlang)
+forms <- list(expr(lm(wage ~ age, data = wage)), substitute(wage ~poly(age,x), list(x = 2:5)))
+
+forms <- list(expr(lm(wage ~ age, data = wage)), NA, NA, NA, NA)
+
+
+fit_polys <- function(resp, pred, dat, n){
+  resp <- ensym(resp)
+  pred = ensym(pred)
+  dat <- ensym(dat)
+  poly_call <- expr(poly(!!resp, degree = !!n))
+  form <- expr(!!resp ~ !!poly_call)
+  lm_call <- call2(quote(lm), !!!list(formula = form, data = dat) )
+
+  lm_call
+}
+
+
+forms <- map(3:5, ~fit_polys(wage, age, wage, .x))
+
+fits <- map(forms, eval)
+do.call(anova, fits)
+```
+
+
+### Binomial Models
+
+Nice trick with the conditional response. The predictions are remarkably good
+```{r}
+fit3=glm(I(wage>250) ∼poly(age,4),data=Wage, family=binomial)
+preds <- predict(fit3, newdata = list(age = grid), se = TRUE)
+p1 <- tibble(age = grid, pred = preds$fit) %>% 
+  ggplot(aes(x = age, y = pred)) +
+  geom_line()+
+  geom_point()
+p1
+```
+
+By default, this gives predictions in the form $X\hat\beta$ - the log odds (log of probability divided by complement). Recall the beta in logit regression represents the effect on X required to get the power to which $e$ must be raised to equal the odds. We raise to the $e$th power to get:
+\[Pr(Y=1|X)= \frac{\exp{X\beta}}{1 + \exp{X\beta}}\]
+
+So:
+COnfidence intervals have to be computed manually this way, since by default the function gives negative CIs for probabilities
+```{r}
+prob <- exp(preds$fit)/(1+preds$fit)
+se_probs <- tibble(lower = preds$fit + 2*preds$se.fit, upper = preds$fit - 2*preds$se.fit) %>% 
+  apply(MARGIN = 2, function(x) exp(x) /(1 +exp(x))) %>% 
+  as_tibble()
+
+#cool se band plot in progress
+# p1 +
+# geom_point(data = se_probs, aes(x = lower, y = upper)) +
+#   geom_line(col = "blue")
+```
+
+### Stepwise Polynomials
+
+Cut is useful here. Note the first interval is omitted and used as the intercept.
+
+```{r}
+fit4 <- lm(wage~cut(age, 4), data = Wage)
+```
+
+
+## Splines
+
+We need the spline library to fit splines. splines::bs() generates basis functions for splines with the given knots (cubic by default).
+```{r}
+library(splines)
+fit5 <- lm(wage~bs(age, knots = c(25, 40, 60)), data = wage)
+pred <- predict(fit5, newdata = list(age = grid), se = TRUE)
+
+data.frame(pred = pred$fit, age = grid, se = pred$se.fit) %>% 
+  ggplot(aes(x = age, y = pred)) +
+  geom_line()+
+  geom_line(aes(y = pred + se), col = "red")+
+geom_line(aes(y = pred - se), col = "red") +
+  geom_vline(xintercept = c(25,40,60), linetype = "dashed")
+```
+
+We could also use the df arg to fit a certain number of basis functions (a 3-knot cubic has 7 df, for instance).
+
+Use ns to fit natural splines. Here are two possible approaches: choose lambda with target df, or by optimizing with cross-validation.
+Loess is used for local regression
+```{r}
+fit6=lm(wage∼ns(age,df=4),data=Wage) 
+pred2=predict(fit2,newdata=list(age=grid),se=T)
+
+fit7 <- smooth.spline(wage$age, wage$wage, cv = TRUE)
+fit8 <- smooth.spline(wage$age, wage$wage, df =16)
+
+```
+
+## GAMs
+
+Just fit a standard lm, with each predictor transformed as desired.
+
+```{r}
+gam1=lm(wage∼ns(year,4)+ns(age,5)+education, data=Wage)
+
+```
+
+
+To use smoothing splines or other methods that can't be reduced to basis functions, we need the GAM library. Here we create two smoothing splines and add a factor variable (converted to dummies) for fun.
+
+```{r}
+library(gam)
+gam2 <- gam(wage~(s(year, 4) + s(age, 5) +education), data = wage)
+plot(gam2, se = TRUE)
+```
+
+The fit for year looks pretty linear. We should run an ANOVA to determine whether year should be omitted, treated as is, or fit to a smoothing splines.
+The last significant value is for the linear year model, so that one is best.
+The summary for the linear year model SHOULD have a high p-value for the F-test for year, indicating a likely linear relationship, but does not.
+```{r}
+gam.m1 <- gam(wage∼(s(age,5)+education),data=wage) 
+gam.m2 <- gam(wage∼(year+s(age,5)+education),data=wage)
+anova(gam.m1, gam.m2, gam2, test="F")
+summary(gam.m2)
+```
+
+Use the lo function to fit local regressions as elements of a GMA. lo can also fit local regressions on interactions (a 2d surface).
+```{r}
+preds <- predict(gam.m2, newdata = wage)
+gam3 <- gam(wage ~(s(year, df = 4)+lo(age, span = .7)+education), data = wage)
+plot(gam3, se = TRUE)
+
+gam4 <- gam(wage∼(lo(year,age,span=0.5)+education),data=Wage)
+```
+
+Use family = binomial to fit a logistic GAM. Here we would need to drop the < high school education category because it has no cases in the response variable (wage > 250).
+
+
+# Exercises
+
+## 2. 
+
+We are asked to estimate the shape of natural splines fitted using various values of $\lambda$ for one of $m$ derivatives.
+
+(b)λ=∞,m=1.(c)λ=∞,m=2.(d)λ=∞,m=3.(e)λ=0,m=3 λ=∞,m=0.
+
+I initially had this wrong - if $\lambda=\infty$, then the RSS term becomes irrelevant and we care only about minimizing the integral term. In that case, $g(x)$ has to have degree one greater than $m$ to minimize the area under the curve. If $\lambda = 0$, then we only care about the RSS term, so we just use the OLS estimate.
+
+## 3.
+We are asked to consider a set of basis functions.
+Suppose we fit a curve with basis functions1(X)=X,b2(X)=(X−1)2I(X≥1). (Note that(X≥1) equals 1 forX≥1and0otherwise.) We fit the linear regression modelY=β0+β1b1(X)+β2b2(X)+,and obtain coefficient estimatesˆβ0=1,ˆβ1=1,ˆβ2=−2. Sketch theestimated curve betweenX=−2andX= 2. Note the intercepts,slopes, and other relevant information.
+
+This fit squares only those values of $X$ above or equal to 1, so $b2(X) >= b1(X)$. Let's plot the curve and cheat:
+
+X steadily increases below -1, where only the linear term applies, but plummets when the squared basis function is introduced becasue the beta is negative.
+```{r}
+X <- -5:5
+Y <- 1 + X*1  - ifelse(X >=1, X^2, 0)*2
+
+tibble(X = X, Y = Y) %>% 
+  ggplot(aes(x = X, y = Y)) +
+  geom_point()+
+  geom_line()
+```
+## 4.
+Suppose we fit a curve with basis functionsb1(X)=I(0≤X≤2)−(X−1)I(1≤X≤2),b2(X)=(X−3)I(3≤X≤4)+I(4<X≤5).We fit the linear regression modelY=β0+β1b1(X)+β2b2(X),and obtain coefficient estimatesˆβ0=1,ˆβ1=1,ˆβ2=3.
+
+Another one. If I'm reading this right, the first term converts $X$ between 0 and 1 to 1, multiplies $X$ ebtween 1 and 2 by -1, and converts all others to 0. The second reduces $X$ between 3 and 4 by 3, then converts $X$ between 4 and 5 to , zeroing out all others. I expect to see a lfat line at 1 between 0 and 1, a line with slope -1 from 1 to 2, a line with slope 3 from 3 to 4, then another flat line at 1 Let's try plotting this mess:
+
+```{r}
+X <- -5:5
+Y <- 1 + 1* (ifelse(between(X, 0, 2), 1, 0) -
+  (X-1)*ifelse(between(X,  1, 2), 1, 0)) +
+  3 * ((X-3) * ifelse(between(X, 3, 4), 1, 0) +ifelse(X > 4 & X <=5, 1, 0))
+
+tibble(X =X, Y = Y) %>% 
+  ggplot(aes(x = X, y = Y))+
+  geom_point() +
+  geom_line()
+  
+
+```
+I just forgot the beta coefficient for the last interval of the second basis.
+
+##5.
+We are asked two compare two smothers, one using the third derivative and the otter the fourth. 
+(a) Asλ→∞, will ˆg1or ˆg2have the smaller training RSS?(b) Asλ→∞, will ˆg1or ˆg2have the smaller test RSS?(c) Forλ= 0, will ˆg1or ˆg2have the smaller training and test RSS?
+
+You have this backwards - the higher-order derivatives are MORE flexible because $g$ necessarily has higher degree and therefore more flexibility (an extra df).
+a. $\hat{g}_2$ has smaller train RSS because it is a higher-order polynomial and is therefore more flexible
+
+b. $\hat{g_1}$, because it is less vulnerable to overfitting.
+
+c. If $\lambda = 0$, neither, because the integral constraint is zeroed out, leaving just the RSS term.
+
+
+a-d. If lambda is $\infty$, then the fit is just the OLS line no matter the choice of derivative. 
+e. If $\lambda = 0$, the penalty has no effect, so $g(x)$ perfectly interpolates the data.
+
+
+6. In this exercise, you will further analyze the Wagedata set consideredthroughout this chapter.(a) Perform polynomial regression to predictwageusingage.Usecross-validation to select the optimal degreedfor the polyno-mial. What degree was chosen, and how does this compare tothe results of hypothesis testing using ANOVA? Make a plot ofthe resulting polynomial fit to the data.(b) Fit a step function to predictwageusingage, and perform cross-validation to choose the optimal number of cuts. Make a plot ofthe fit obtained.
+
+We are asked to find optimal polynomial and stepwise fits on wage. I shameless recycle my code to use the ANOVA approach, then use cross-validation.
+
+Bquote is so cool.
+
+```{r, cache = TRUE}
+library(ISLR)
+
+forms <- list(expr(wage ~ age), NA, NA, NA, NA)
+exp <- expr(wage ~ poly(age, i))
+for(i in 2:7){
+ 
+  #exp <- expr(wage~poly(age, i))
+  #forms[[i]] <- eval(exp, e)
+  forms[[i]] <- bquote(.(bquote(wage~poly(age, .(i)))))
+  #forms[[i]] <- expr(!!exp)
+}
+
+
+fits <- map(forms, ~lm(data = wage, formula = .x))
+do.call(anova, fits)
+```
+
+I write some quasiquoting functions to test MSE because I can. Anyway, we see MSE stops declining meaningfully at degree 4, consistent with the ANOVA.
+```{r, cache = TRUE}
+make_folds <- function(df, k = 10){
+  
+  if( nrow(df) %/% k < 2){
+    stop("Are you trying to do LOOCV?")
+  }
+  
+  #randomize rows
+  df <- slice_sample(df, n = nrow(df), replace = FALSE)
+  over <- nrow(df) %% k
+  per_fold <- (nrow(df) - over) /k
+  
+  #Get fold cutoffs, 0 as placeholder
+  steps <- rep(per_fold, times = k)
+  steps[seq_len(over)] <- steps[seq_len(over)] + 1 
+  splits <- c(0, cumsum(steps))
+  
+  #Get index range, sample rows
+  inds <- vector("list", length = k)
+  inds <- imap(inds, ~`<-`(.x, c(splits[.y] +1, splits[.y +1])))
+  
+  out <- map(inds, function(inds){
+    samp <- seq(inds[1], inds[2])
+    list(train = df[-samp,],
+         test = df[samp,])
+  }) %>% 
+    rlang::set_names(nm = as.character(seq_len(k)))
+  
+  print(paste("Generated", k, "folds, including", over, "of length", k+1))
+  out
+}
+
+# I shamelessly abuse quasiquotation here for practice.
+cross_valid <- function(form, folds){
+  
+  resp <- sym(all.vars(form)[1])
+  out <- map_dbl(folds, function(fold){
+    fit <- eval(expr(lm(!!form, data)), envir = env(data = fold$train))
+    #fit <- exec(lm, form, data = fold$train)
+    preds <- predict(fit, newdata = fold$test)
+    out <- mean((preds - eval(expr(`$`(fold$test, !!resp))))^2) * #get MSE
+      (nrow(fold$test)/ (nrow(fold$test) + nrow(fold$train)))
+  })
+  out <- sum(out)
+  out
+}
+folds <- make_folds(wage, k = 10)
+map(forms, cross_valid, folds = folds)
+```
+
+Next we try a stepwise model. It seems that prime working age is 40-60, so I try cutting that range. 8 cuts optimizes MSE, but my experimental model does poorly
+```{r, cache = TRUE}
+
+wage %>% 
+  ggplot(aes(x = age, y = wage)) +
+  geom_smooth()
+
+mod1 <- lm(wage~cut(age, 4), data = Wage)
+mod2 <- lm(wage~cut(age, 5), data = Wage)
+mod3 <- wage %>% mutate(age2 = cut(age, breaks = c(min(age), 40, 60, max(age)))) %>% 
+  lm(data = ., formula = wage ~ age2)
+
+forms <- vector("list")
+for(i in 2:10){
+ 
+  #exp <- expr(wage~poly(age, i))
+  #forms[[i]] <- eval(exp, e)
+  forms[[i-1]] <- expr(lm(wage ~ cut(age, !!i), data = wage))
+  
+  
+}
+broom::augment(mod3) %>% 
+  {mean((.$wage - .$.fitted)^2)}
+
+errors <- map(forms, eval) %>% 
+map(broom::augment) %>% 
+map_dbl(~mean((.x$wage - .x$.fitted)^2)) %>% 
+  set_names(nm = as.character(2:10))
+
+errors
+
+tibble(cuts = 2:10, mse = errors) %>% 
+  ggplot(aes(x = cuts, y = errors))+
+  geom_point()+
+  geom_line(col = "green") +
+  labs(title= "Error vs. Number of Cuts")
+
+```
+
+## 7. 
+This question just asks to try more models on wage. Checking means by factor, I see that education most strongly relates to earnings, as well as health insurance, race, and marital status. I worry about multicollinearity, however. I check some conditional means:
+
+```{r}
+library(ISLR)
+glimpse(wage)
+
+map_if(wage, .p = is.factor, ~tapply(wage$wage, .x, mean, na.rm = TRUE), .else = as.null) %>% 
+  discard(is.null)
+
+tapply(wage$wage[wage$education == "1. < HS Grad"], wage$race[wage$education == "1. < HS Grad"], mean, na.rm = TRUE)
+
+imap(wage %>% dplyr::select(where(is.numeric)), ~ggplot(data = wage, aes(x = !!sym(.y), y = wage)) +
+  geom_point() +
+  geom_smooth())
+  
+#Use tapply on subsets of a dataset defined by another factor.
+tapply2 <- function(df, fac1, fac2, num, fun = mean, ...){
+  
+  #Caputr args in list
+  args <- ensyms(fac1, fac2, num) %>% set_names(nm = c("fac1", "fac2", "num"))
+  
+  #Set caller environemnt to evaluate 
+  #envi <- parent.frame()
+  subsets <- split(df, eval(expr(`$`(df, !!args$fac2))))
+  
+  #Map over susbets to compute susbet means
+  out <- map(subsets, ~tapply(X = eval(expr(`$`(.x, !!args$num))),
+                            INDEX = eval(expr(`$`(.x,!!args$fac1))), FUN = fun))
+  out
+}
+```
+
+Using my custom function, we see that income disparities holding constant education vary by race
+```{r}
+tapply2(wage, race, education, wage)
+
+```
+
+##8. 
+We are asked to try some regression on the Auto dataset
+
+```{r}
+library(ISLR)
+auto <- Auto
+
+map(auto, summary)
+cor(auto[,-9])
+
+auto %>% dplyr::select(-name) %>% 
+  imap(~ggplot(data = auto, aes(x= !!sym(.y), y = mpg))+
+         geom_point() +
+         geom_smooth())
+```
+
+
+I experiment by condensing the education factor, but it actually worsens the model.
+```{r}
+library(splines)
+
+wage$educ2 <- fct_collapse(wage$education, subcollege = levels(wage$education)[1:3], college = levels(wage$education)[4:5])
+mod1 <- lm(data = wage, wage ~  bs(age, degree = 3) + maritl + education + race + jobclass +health_ins)
+```
+
+
+## 9.
+This question asks us to work on dis and nox, two variables in Boston.
+I can't find the dataset, so I download and clean it myself. The model has decent R squared.
+```{r}
+library(ISLR)
+# boston <- read_csv("C:/Users/heslinr1/Documents/Software/R/Projects/Exercises/data/housing.csv", col_names = FALSE) %>% 
+#   map(str_split, "\\s") %>% 
+#   map_depth(2, ~discard(.x, ~.x =="")) %>% 
+#   map_depth(2, ~set_names(.x, nm = c("crim", "zn", "indus", "chas", "nox", "rm", "age", "dis", "rad", "tax", "ptration", "b_1k", "lstat", "medv"))) %>% 
+#   bind_rows() %>% 
+#   mutate(across(everything(), as.numeric))
+
+boston <- MASS::Boston
+
+mod1 <- lm(nox ~poly(dis, 3), data = boston)
+broom::glance(mod1)
+
+#Sneaky function to sub in generic terms from a linear formula. Double substitute trick from Advanced R
+sub_form <- function(form){
+  
+  pred <- all.vars(form)[2]
+  resp <- all.vars(form)[1]
+  
+  
+  #This works becuase the outer substitute quotes the inner one and substitutes form for temp. Evaluating the otuer substitute then subs in the correct value.
+  envi <- list2(!!pred := sym("x"), !!resp := sym("y"))
+  out <- eval(substitute(substitute(temp, envi), list(temp = form)))
+  out
+}
+boston %>% ggplot(aes(x = dis,y = nox)) +
+  geom_point() +
+  geom_smooth(formula = sub_form(formula(mod1)), se = FALSE, span = 1)
+```
+I compare some polynomial fits of differing degree. The higher degrees are noticeably more variant near the ends of the domain.
+```{r}
+
+forms <- vector("list")
+for(i in 1:10){
+ 
+  #exp <- expr(wage~poly(age, i))
+  #forms[[i]] <- eval(exp, e)
+  forms[[i]] <- expr(nox ~ poly(dis, degree = !!i))
+  
+}
+map(forms, lm, data = boston)  %>%
+  map(broom::augment) %>% 
+map_dbl(~sum((.x$nox - .x$.fitted)^2))
+
+
+generic <- map(forms, sub_form)
+
+boston %>% ggplot(aes(x = dis, y = nox))+
+  geom_jitter(alpha = .1)+
+  imap(as.character(generic), ~geom_smooth(aes(col = as.character(.y)), formula = .x, se = FALSE, method = "lm")) +
+  scale_color_discrete(name = "Degree", breaks = as.character(1:10)) +
+  labs(title = "Polynomial Fits")
+```
+
+
+I cross-validate. MSE has an odd pattern, varying intensely with higher-degree fits.
+```{r}
+folds <- make_folds(boston, 10)
+map_dbl(forms, cross_valid, folds = folds ) %>% 
+  tibble(mse = ., degree = 1:10) %>% 
+  ggplot(aes(x = degree, y = mse)) +
+  geom_point()+
+  geom_line()
+```
+
+Next we use regression splines for varying degrees of freedom. Reminder: a spline of degree $d$ with $K$ knots has $d+K+1$ degrees of freedom (the extra from the intercept). Natural splines have fewer because they impose constraints.
+
+RSS steadily declines as df increases, as we'd expect. Cross-validated MSE does not vary much either.
+```{r}
+library(splines)
+
+boston %>% ggplot(aes(x = nox)) +
+  geom_density()
+lm(nox~bs(dis, df = 4), data = boston)
+lm(nox~bs(dis, df = 5, knots = 3), data = boston)
+
+for(i in 1:10){
+  
+  forms[[i]] <- expr(lm(nox~bs(dis, df = !!i), data = boston))
+  
+  
+}
+#Alternate use of expression substitution
+imap(forms, ~eval(.x, envir = list(i = .y))) %>% 
+  map(broom::augment) %>% 
+  map_dbl(~sum((.x$nox - .x$.fitted)^2))
+
+folds <- make_folds(boston, 10)
+map(forms, cross_valid, folds = folds)
+map(forms, formula)
+```
+
+## 10. 
+We are now asked to fit a GAM on collge data
+
+First, best subset selection. Looks like most variables have positive skew. Looks like most criteria stop significantly approving around a 9-predictor model. From the intercept, being a private school increases predicted tuition by more than $4000.
+```{r}
+library(ISLR)
+library(leaps)
+college <- College
+glimpse(college)
+inds <- sample(nrow(college), nrow(college) /5, replace = FALSE)
+
+train <- college[inds,]
+test <- college[-inds,]
+
+best <- regsubsets(data = train, Outstate ~., method = "forward", nvmax = 15)
+summary(best)
+
+imap(college, ~ggplot(data = college, aes( x = eval(sym(.y)))) + geom_density() +labs(x = .y))
+
+coef(best, id = 9)
+
+```
+Next I check for . Several predictors seem to have nonlinear relationships, but outliers make it hard to tell. The first model is not very good, with few significant coefficients. I get an RMSE of about 2200, which isn't terrible.
+```{r}
+
+college %>% dplyr::select(names(coef(best, id = 9)[-c(1,2)])) %>% 
+  imap(~ggplot(data = college, aes(x = eval(sym(.y)), y = Outstate)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = .y))
+
+mod <- lm(Outstate ~ Private + Apps + log(Accept) + F.Undergrad + Room.Board  + perc.alumni + bs(Expend, df = 7) + bs(Grad.Rate, df = 8), data = train)
+summary(mod)
+
+mod %>% broom::augment() %>% 
+  ggplot(aes(x = .fitted, y = Outstate)) +
+  geom_point(aes(col = abs(.fitted - Outstate))) +
+  geom_abline() +
+  scale_color_gradient(low = "green", high = "red")
+
+sqrt(mean((test$Outstate - predict(mod, newdata = test))^2))
+```
+
+##11.
+The next problem demonstrates backfitting.
+
+Generate a responseYand two predictorsX1andX2, withn= 100.(b) Initializeˆβ1to take on a value of your choice. It does not matterwhat value you choose.(c) Keepingˆβ1fixed, fit the modelY−ˆβ1X1=β0+β2X2+.You can do this as follows.
+
+The model to fit is:
+
+\[Y -\beta_1X_1 = \beta_0+\beta_2X_2+\epsilon\]
+
+I start with a single iteration. Estiamte the $\beta_2$ by subtracting the product of $\beta_1$ and its predictor from the response and conducting regression. Then use this estimate to estiamte $\beta_1$, and repeat.
+```{r}
+X1 <- rnorm(100)
+X2 <- X1 + rnorm(100)
+Y <- 6*X1 + -10*X2 + rnorm(100)
+
+beta1 <- 5
+
+a <- Y - beta1*X1
+beta2 <- lm(a~X2)$coef[2]
+
+a <- Y - beta2*X2
+beta1 <- lm(a~X1)$coef[2]
+beta0 <- lm(a~X1)$coef[1]
+beta0
+beta1
+beta2
+```
+Now we iterate. I abuse deep assign when writing the function. Remarkably, the estimates converge after just 10 iterations.
+```{r}
+
+estimates <- map_dfr(1:1000, function(.x){
+  a <- Y - beta1*X1
+  beta2 <<- lm(a~X2)$coef[2]
+  
+  a <- Y - beta2*X2
+  beta1 <<- lm(a~X1)$coef[2]
+  beta0 <<- lm(a~X1)$coef[1]
+  data.frame(iteration = .x, beta0 = beta0, beta1 = beta1, beta2 = beta2)
+})
+
+ref <- lm(Y ~ X1 +X2)
+coef(ref)
+
+estimates %>% pivot_longer(starts_with("beta")) %>% 
+  mutate(actual = case_when(name =="beta0" ~ coef(ref)[1],
+                            name == "beta1" ~coef(ref)[2],
+                            TRUE ~ coef(ref)[3])) %>% 
+  ggplot(aes(x = iteration, y = value, col = name)) +
+  geom_line()+
+  geom_hline(aes(yintercept = actual)) +
+  scale_x_log10()+
+  facet_wrap( name ~ ., ncol = 1, scales = "free_y")
+
+
+
+
+```
+
+The final problem asks us to apply backfitting to a $p=100$ dataset.
+Remarkably, the backfit estimate is much closer than a multivariate model,a and converges after just two iterations!
+```{r}
+xes <- sample(1:10, 100, replace = TRUE)
+actual <- sample(0:10, 100, replace = TRUE)
+dat <- replicate(100, rnorm(1000)) %>%
+  as.data.frame() *xes
+
+Y <- (dat * actual) %>% reduce(`+`)
+
+backfit <- function(res = rep(1, 100), place = 1){
+  
+  # compute partial residual
+  pr <- Y - ((dat[,-place]  * res[-place])) %>% 
+    reduce(`+`)
+  
+  #Fit model on PRs, take beta
+  res[place] <- coef(lm(pr~dat[,place]))[2]
+  place = place +1
+  
+  #Exit at vector end
+  if(place > length(res)){
+   
+    return(res)
+  }
+  backfit(res = res, place = place)
+  #res
+}
+backfits <- replicate(10, backfit) %>% 
+  purrr::accumulate(~exec(.y, .x), .init = backfit()) %>% 
+  map(~(actual - .x)^2) %>% 
+  map_dbl(mean)
+
+ref <- mean((actual -(coef(lm(Y~., data = dat))[-1]))^2)
+tibble(MSE = backfits, iteration = seq_along(backfits)) %>% 
+  ggplot(aes(x = iteration, y = MSE)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(linetype = "dashed", yintercept = ref) 
+```

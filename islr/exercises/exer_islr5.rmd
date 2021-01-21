@@ -1,0 +1,235 @@
+---
+title: "ISLR Chapter 5 Exercises"
+author: "Ryan Heslin"
+date: "11/17/2020"
+output: html_document
+---
+
+# Lab 5: Cross-Validation and Bootstrapping
+
+
+2. We will now derive the probability that a given observation is part of a bootstrap sample. Suppose that we obtain a bootstrap sample from a set of n observations
+
+Some of these are wrong; these are the formulas for NOT being in the set, so the formula for membership should be $1-(1-(\frac{1}{n})^n$.
+a. $\frac{n-1}{n}$. Let $j=1$. For $j$, there are $n-1$ other values the bootstrap observation could take. So the odds are $\frac{n-1}{n}$, since we sample $n$ times.
+b. Again $\frac{n-1}{n}$, because each observation has an equal chance of appearing in each draw.
+c. This is a case of a repeated event with unvarying probability. The expression I gave above can be rewritten as $1-\frac{1}{n}$. This is simply raised to the nth power, since it is repeated once for each observation, so the chance of an observation not appearing is
+\[(1-\frac{1}{n})^n\]
+The limit of this expression is about .63. As $n$ gets bigger, the chance of appearing in a single draw dwindles as the ration $\frac{n-1}{n}$ approaches one, but is almost exactly canceled out by being raised to the $n$th power. The trends converge at the limit.
+
+```{r}
+library(rlang)
+library(tidyverse)
+library(boot)
+p_in <- expr(1 -((n-1)/n)^n)
+
+eval(p_in, env = list(n= c(5, 10, 10000)))
+eval(p_in, list(n = 1:100))
+
+dat <- 1:100000
+
+tibble(n = 1:100000, prob  = rlang::eval_tidy(p_in)) %>% 
+  ggplot(aes(x = n, y = prob)) +
+  geom_smooth(method = "gam", se = F) 
+```
+
+Notice the amusing way the smoother overfits.
+```{r}
+store=rep(NA, 10000)
+for(i in 1:10000){
+  store[i]=sum(sample(1:100, rep=TRUE)==4)>0
+  }
+ mean(store)
+ 
+ store <- replicate(10000, sum(sample(1:100, rep=TRUE)==4)>0)
+
+```
+
+The proportion is about 60%. From the expression given above, we know
+
+\[\Pr(\text{j not in bootstrap})=(1-\frac{1}{n}^n)\]
+If we subtract this from 1 to get the odds of j appearing in the bootstrap, we get roughly the observed mean.
+
+3. We now review k-fold cross-validation.(a) Explain how k-fold cross-validation is implemented.(b) What are the advantages and disadvantages of-fold cross-validation relative to:i. The validation set approach?ii. LOOCV?
+
+a. The data are divided into $K$ equally sized groups, usually about five or ten. One is used as a validation set, and the remainder for training. After each iteration, a training fold swaps places with the validation fold. _The results are averaged._
+Compared to validation sets, K-folding preserves much more data for training and therefore has less _variance._ Compared to LOOCV, it is less variant because each fitted model has $n-\frac{n}{K}$ observations in common with the others (the one overlapping fold) in common with the others. In LOOCV, the models differ by just one observation and are thus highly correlated.
+
+_The advantage of validation sets is computational cheapness._
+
+
+4.Suppose that we use some statistical learning method to make a pre-diction for the response Y for a particular value of the predictor X.Carefully describe how we might estimate the standard deviation of our prediction.
+
+We use an extension of the typical formula with a LOOCV sample. We sum the difference of each predicted value from the mean of every other predicted value, then divide this by $n-1$ to get the standard deviation.
+
+5.In Chapter 4, we used logistic regression to predict the probability of default using income and balance on the Default data set. We will now estimate the test error of this logistic regression model using the validation set approach. Do not forget to set a random seed before beginning your analysis.
+
+I fit a model and test it using a validation set after four iterations, the results are pretty similar, as we'd expect. Adding a student dummy variable makes little difference.
+
+```{r}
+library(ISLR)
+
+set.seed(1)
+default <- Default
+train_inds <- replicate(sample(seq(1, nrow(default)), 5000, replace = F), n =4) %>% as.data.frame()
+
+map(train_inds, function(train_inds){
+  train <- default[train_inds,]
+  valid <- default[-train_inds,]
+  mod <- glm(data =train, default ~ income+balance, family= binomial)
+  
+  predict(mod, valid, type = "response") %>%
+    round %>% factor(labels = c("No", "Yes")) %>%
+    table(., valid$default)
+}
+) %>% set_names(1:4)
+
+default <- default %>% mutate(student_dummy = as.numeric(student)-1)
+
+mod2 <- glm(data =default[train_inds[,1],], default ~ income+ balance + student_dummy, family= binomial)
+predict(mod2, default[-train_inds[,1],], type = "response") %>%
+    round %>% factor(labels = c("No", "Yes")) %>%
+    table
+```
+
+For which values are the predictions wrong?
+```{r}
+(predict(mod2, default[-train_inds[,1],], type = "response") %>%
+          round() %>% factor(labels = c("No", "Yes")) != default[-train_inds[,1],]$default) %>% mean()
+```
+
+This test error seems good, but it's not much better than a naive classifier that never predicted default, which would have an error rate of:
+```{r}
+mean(default$default=="Yes")
+```
+
+Now we are asked to compute SE's using both bootstraps and the glm function.
+
+The text notes that bootstrap SE estimates are more accurate than the standard formulas because they do not assume the model is accurate when estimating the error variance and do not assume the $x_i$ are fixed. 
+
+The bootstrap reports much lower standard errors for each term, interestingly. All the errors look normally distributed.
+
+```{r}
+library(boot)
+
+get_coefs <- function(df, inds){
+  glm(data = df[inds,], default ~ income + balance, family = binomial) %>% coef()
+  
+} 
+get_coefs(default, sample(nrow(default), nrow(default), replace = TRUE))
+
+estimate <- boot(default, get_coefs, 1000)
+
+estimate$t %>% as.data.frame() %>%
+  set_names(c("intercept", "income", "balance")) %>% 
+  pivot_longer(everything(), names_to = "Term") %>% 
+  ggplot(aes(x = value, fill = Term)) +
+  geom_histogram(bins = 20) +
+  facet_wrap(. ~ Term, scales = "free_x")
+```
+
+7. We are now asked to use LOOCV to validate a logistic model. I hold out the first observation and verify it was correctly classified 
+
+```{r}
+weekly <- Weekly
+mod <- glm(data =weekly, Direction ~ Lag1 + Lag2, family = binomial)
+mod_train <- glm(data = weekly[-1,], Direction ~ Lag1 + Lag2, family = binomial)
+
+(predict(mod_train, weekly, mode = "response") %>% {.[1]} %>% round()) ==(as.numeric(weekly$Direction)-1)[1]
+```
+Next we iterate LOOCV over the dataset. The model does not improve much over chance.
+```{r}
+error <-vector(length = nrow(weekly)) 
+
+for(i in seq(1, nrow(weekly))){
+  dat <- weekly[-i,]
+  mod <- glm(data = dat, Direction ~ Lag1 + Lag2, family = binomial)
+  error[i] <- (predict(mod, weekly, mode = "response") %>% {.[i]} %>%
+    round()) == (as.numeric(weekly$Direction)-1)[i] 
+}
+mean(error)
+```
+
+8. Next we cross-validate simulated data. The relationship is quadratic, obviously.
+
+```{r}
+set.seed(1) 
+x=rnorm(100)
+y=x-2*x^2+rnorm(100)
+
+dat <- data.frame(x, y)
+
+dat %>% ggplot(aes(x, y))+
+  geom_point() +
+  geom_smooth()
+
+```
+
+The true function here is:
+\[y = 2x - 2x^2 + \epsilon \]
+\[y = 0 + \epsilon\]
+since $x = \epsilon$
+
+I had to look up the answer for this one, I admit.
+
+After some aggressive programming, I find that the linear model's MSE is terrible, but the others are comparable. The random seed is irrelevant, since it plays no role in fitting the models.
+
+The standard errors for the polynomial models are actually higher, but much smaller relative to the coefficients. I don't know how polynomial terms affect the SE formula, for simple regression the sqaure root of the ration of RSS to TSS divided by degrees of freedom.
+I also completely forgot to use the secret shortcut formula, which does work for polynomial regression.
+```{r}
+set.seed(3454354)
+
+forms <- append(expr(y~x), map(2:4, ~substitute(y ~poly(x, n), list(n = as.numeric(.x))))) %>% 
+  set_names(c("linear", "quad", "cubic", "quartic"))
+
+map(forms, ~lm(data = dat, formula = .x))
+
+
+get_loocv <- function(df, form){
+  
+  resp <- form[[2]]
+  out <- map2_dbl(list(form), 1:nrow(df), function(form, exclude){
+    mod <- lm(data = df[-exclude], formula = form)
+    error <- (predict(mod, df)[exclude] -df[exclude,as.character(resp)])^2
+    error
+  })
+  out
+}
+
+map(forms, ~get_loocv(df = dat, .x)) %>% map_dbl(mean)
+
+map(forms, ~lm(data = dat, formula = .x)) %>% map(summary)
+
+```
+
+9. The last problem asks us to find a bootstrap estimate of a population mean. The bootstrap gives lower SE's than a difference of means test.
+```{r}
+library(MASS)
+boston <- Boston
+
+mu_hat <- mean(boston$medv)
+mu_hat
+se_hat <- with(boston, sd(medv)/sqrt(length(medv)))
+se_hat
+boot_mean <- function(vec, inds)
+  mean(vec[inds])
+booted <- boot(boston$medv, boot_mean, 1000)
+booted
+t.test(Boston$medv) %>% broom::glance()
+```
+Now the confidence interval of the bootstrap. I can't figure out how to extract it, but it looks about the same as the sample CI.
+```{r}
+boot_med <- function(vec, inds) median(vec[inds])
+boot_quant <- function(n){
+ force(n)
+  function(vec, inds){
+    quantile(vec[inds], probs = n)
+  }
+}
+
+median <- boot(boston$medv, boot_med, 1000)
+median
+
+boot(boston$medv, boot_quant(.1), 1000)
+c(quantile(boston$medv, .1) - 2*se_hat, quantile(boston$medv, .1) + 2* se_hat)
+```

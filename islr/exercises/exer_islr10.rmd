@@ -1,0 +1,376 @@
+---
+title: "ISLR Chapter 10 Exercises"
+author: "Ryan Heslin"
+date: "1/18/2021"
+output: html_document
+---
+
+# Lab
+
+## PCA
+
+First I plot variance explained in a PCA of USArrest
+The base PC plot doesn't come out so pretty. I should maybe devise my own.
+```{r}
+library(tidyverse)
+
+arrests <- prcomp(USArrests, scale. = TRUE)
+biplot(arrests, scale =0)
+```
+To get varaince explained:
+```{r}
+tibble(Explained = arrests$sdev^2/ncol(USArrests),
+        PC = 1:4) %>% 
+  ggplot(aes(x= PC, y = Explained)) +
+  geom_line( col = "green")
+```
+## K-Means CLustering
+
+Use the base kmeans function for this. Sweep is underrated. The separation is perfect, with no observation misclassified
+```{r}
+set.seed(2)
+X <- matrix(rnorm(100), ncol = 2) %>% 
+  sweep(., MARGIN = 1, FUN = `+`, c(rep(3,25), rep(-4,25)))
+
+kmean <- kmeans(X, 2, nstart =20)
+kmean$cluster
+```
+```{r}
+tibble(X, clust = kmean$cluster) %>% 
+  ggplot(aes(x = X[,1], y = X[,2], col = factor(clust))) +
+  geom_point()
+```
+
+If we had more dimensions, we could visualize by finding the first two PC score vectors and plotting them
+
+What if we use the wrong $K$?
+The nstart arg controls number of initial random assignments. The best is selected. If too low, badness ensues, as we can tell by the high within-cluster sum of squares.
+```{r}
+km_bad <- kmeans(X,3, nstart = 20)
+km_bad$cluster
+km_bad$centers
+
+km_worse <- kmeans(X, 2, nstart = 1)
+km_worse$tot.withinss
+```
+
+## Hierarchcial Clustering
+
+hclust does this n base. To cluster by complete linkage (highest Euclidean distance), use dist:
+```{r}
+hcs <- map(c("average", "complete", "single"), ~hclust(dist(X), method = .x))
+
+map(hcs, plot)
+```
+The CUtree function gives the cluster assignments for each observation beneath a given cut. This gives the number of clusters to assign to.
+
+```{r}
+map(hcs, cutree, 1:5)
+```
+If instead we want correlation distance, use the as.dist function, though this requires at least three predictors to be meaningful.
+Note the need to transpose so the correlations are between observations, not predictors. $A^AT$ instead of $A^TA$. Note also the height is in variance units (i.e., completely negatively correlated observations have distance $1-(-1) = 2$).
+```{r}
+X <- matrix(rnorm(90), ncol =3)
+dists <- as.dist(1 - cor(t(X)))
+
+plot(hclust(dists, method = "complete"))
+```
+# Conceptual Exercises
+
+## 2.
+We are given the following dissimilarity matrix and asked to sketch hierarchical clusters. You'll have to trust me I did this one.
+```{r}
+hc <- matrix(c(0,.3,.4,.7,.3,0,.5, .8, .4,.5,0,.45,.7,.8,.45, 0), ncol = 4)
+```
+
+```{r}
+hclust(d = dist(hc))
+```
+
+## 3.
+
+We are asked to perform some simple K-means clustering manually. First, randomly assign clusters:
+(My first attempt actually randomly signed them correctly!)
+```{r}
+set.seed(1997)
+dat <- tibble(obs = 1:6, x1 = c(1,1,0,5,6,4), x2 = c(4,3,4,1,2,0), clust = factor(sample(rep(1:2, 3), 6, replace = FALSE)))
+p1 <- dat %>% ggplot(aes(x = x1, y = x2, col = clust )) +
+  geom_point()+
+  geom_text(aes( label = obs, vjust = .5), show.legend = FALSE) +
+  guides(label = guide_legend(override.aes = list(label = "")))
+p1
+```
+
+The means are quite different for the centroids:
+
+```{r}
+centroids <- tibble(clust = levels(dat$clust), map_dfc(dat[,2:3], ~tapply(.x, dat$clust, mean))) %>% rename(c("x1_c" = "x1", "x2_c" = "x2"))
+centroids
+
+p1 + geom_point(data = centroids, aes(x = x1_c, y = x2_c, col = clust), size = 5)
+
+points <- as.matrix(dat[,2:3]) 
+
+cent_mat <- as.matrix(centroids[,-1])
+
+```
+
+Now we assign to the nearest observation by Euclidean distance. This proves... somewhat more challenging than anticipated
+
+```{r}
+prev <- rep(0, nrow(dat))
+counter <- 0
+
+euclid_dist <- function(ind){ 
+  apply(points, MARGIN = 1, FUN = `-`,  cent_mat[ind,])^2 %>% t() %>% 
+  rowSums() %>%
+  sqrt(.)
+}
+
+#Get lowest centroid distance for each point, assign to corresponding cluster
+assign_cluster <- function(dists){
+  do.call(rbind, dists) %>% 
+  t() %>%
+  apply(MARGIN = 1, FUN =which.min) %>% 
+   factor()
+}
+
+while(any(prev != dat$clust)){
+  counter <- counter + 1
+  prev <- dat$clust
+
+clusts <- assign_cluster(map(1:2, euclid_dist))
+dat$clust <- clusts
+}
+```
+
+
+
+```{r}
+dat %>% ggplot(aes(x = x1, y = x2, col = clust )) +
+     geom_point()+
+     geom_text(aes( label = obs, vjust = .5), col = "black", show.legend = FALSE) +
+     guides(label = guide_legend(override.aes = list(label = "")))
+```
+
+## 4.
+
+we are asked to consider the effects of different scales for K-means clustering for numbers of socks and computers bought.
+
+a. Unscaled:  Since the scale of socks is far higher than computers (people buy more socks), the centroids are skewed along the socks axis.
+
+b. Both scaled by own SD: computers has a lower SD due to its lower range, but the clusters clearly differentiate those who consumed more of one good than the other.
+
+c. Scaled by dollars spent: now the sock axis is virtually irrelevant, so the cluster only considers more or less computers.
+## 5.
+
+This problem asks us to consider hierarchical clustering using different linkages.
+
+(b) At a certain point on the single linkage dendrogram, the clusters{5}and{6}fuse. On the complete linkage dendrogram, the clusters{5}and{6}also fuse at a certain point. Which fusion will occur higher on the tree, or will they fuse at the same height, or is there not enough information to tell?
+
+Single linkage fuses by clsoest cluster, complete linkage by most distant. So the fusion occurs lower on the single linkage tree, since the sum of distances is lower.
+
+##6. 
+This complicated question involves PCA
+
+a. If a component explains "10% of variation", that means its sum of squares is 10% that of the data. In other words, 10% of the total deviations from the predictor means occurs in the direction of the component (the eigenvector of the correlation matrix).
+
+b. We can subtract a component's variance from predictors using:
+\[X_j-\phi_jz_1\]
+where $z_j$ is the vector of component scores. 
+
+b. The scenario is:
+
+A researcher collects expression measurements for 1,000 genes in 100 tissue samples. The data can be written as a 1,000×100 matrix,which we callX, in which each row represents a gene and each col-umn a tissue sample. Each tissue sample was processed on a differentday, and the columns ofXare ordered so that the samples that wereprocessed earliest are on the left, and the samples that were processedlater are on the right. The tissue samples belong to two groups: con-trol (C) and treatment (T). The C and T samples were processedin a random order across the days.The researcher wishes to deter-mine whether each gene’s expressionmeasurements differ between thetreatment and control groups.As a pre-analysis (before comparing T versus C), the researcher per-forms a principal component analysis of the data, and finds that thefirst principal component (a vector of length 100) has a strong lineartrend from left to right, and explains 10 % of the variation. The re-searcher now remembers that each patient sample was run on one oftwo machines, A and B, and machine A was used more often in theearlier times while B was used moreoften later. The researcher hasa record of which sample was run on which machine.
+
+The PCA is run on $X^T$, not $X$, as $X$ has predictors as rows and observations as columns.  But the order of columns is irrelvant to PCA; permuting columns just changes the column order of the correlation matrix, not the eigenvectors themselves. The variance captured in the researcher's analysis actually reflects a trend among the predictors. We can fix this by adding an indicator variable representing which machine was used, scaling, then removing the problematic component.
+
+Another problem: 100 difference of means tests is bound to yield some Type I errors. Better to do clustering 9since we know $K=2$, from the two groups.
+
+Using this method, I "prove" there are several statistically significant differences in several simulations of data with no differences except the random error
+
+```{r}
+head(prcomp(iris[,-5])$x)
+head(prcomp(iris[sample(1:150, 150, replace = FALSE),-5])$x)
+```
+
+
+```{r}
+sims <- replicate(n = 25, {
+means <- sample(rep_len(c(0, 3), 10),10, replace = TRUE)
+
+errors <- c(sample(c(0,1), 5, replace  = TRUE, prob = c(.9, .1)),
+           sample(c(0,1), 5, replace = TRUE, prob = c(.1, .9)))#simulate different values for later samples
+groups <- ifelse(means ==0, "C", "T" ) %>% as.factor()
+
+
+dat1 <- matrix(rnorm(1000), ncol = 10) %>% 
+  sweep(MARGIN = 2, STATS = errors, FUN = `+`)
+pc1 <- prcomp(t(dat1))
+
+resids1 <- pc1$x[,1, drop = FALSE] %*% t(pc1$rotation[,1])
+swept1 <- (t(dat1) - resids1)
+
+rowMeans(swept1)
+pc1$sdev/sum(pc1$sdev)
+
+res_1 <- apply(swept1, MARGIN = 2, function(x) t.test(x ~ groups, paired = FALSE))
+
+res_1 %>% map_dbl(~pluck(.x, "p.value")) %>% 
+  {sum(. <=.05)}
+})
+sims
+```
+
+
+A better approach would be to:
+1. Add a variable indicating which machine did the test
+2. Scale the data
+3. Sweep out the PC corresponding to that variable
+4. Use k-means clustering.
+
+I simulate a treatment effect, as well as the measurement error. I order the data by treatment group before computing the PCA, but it doesn't help much. 
+
+```{r}
+means <- sample(rep_len(c(0, 3), 10),10, replace = TRUE)
+errors <- c(sample(c(0,1), 5, replace  = TRUE, prob = c(.9, .1)),
+           sample(c(0,1), 5, replace = TRUE, prob = c(.1, .9)))
+groups <- ifelse(means ==0, "C", "T" ) %>% as.factor()
+
+dat2 <- matrix(rnorm(1000), ncol = 10)%>% 
+  sweep(MARGIN = 2, STATS = means + errors, FUN = `+`)
+
+dat2 <- dat2 %>% scale() %>% 
+  t() %>% 
+  {.[order(as.numeric(groups)),]}
+pc2 <- prcomp(dat2)
+
+pc2$sdev / sum(pc2$sdev)
+
+resids2 <- pc2$x[,1, drop = FALSE] %*% t(pc2$rotation[,1])
+swept2 <- (dat2 - resids2) 
+
+kmeans(swept2, nstart = 50, centers =2)$cluster
+as.numeric(groups)
+kmeans(dat2, centers = 2, nstart = 50)
+
+res_1 <- apply(swept2, MARGIN = 2, function(x) t.test(x ~ groups, paired = FALSE))
+
+res_1 %>% map_dbl(~pluck(.x, "p.value"))
+
+```
+I'm not sure whether any of this is remotely correct, but it was fun to code.
+
+##7. 
+We are asked to show that correlation and Euclidean distance are virtually the same for scaled, centered data.
+
+That is, that for observations $i$ and $j$, $1-r_{ij}$ is proportional to squared distance. 
+
+I forgot it's the distance _between_ pairwise correlations, not the correlations themselves
+
+```{r}
+arrests <- USArrests %>% t %>% scale()
+euclidean <- as.matrix(dist(t(arrests)))
+correl <- (1 - cor(arrests)) %>% 
+  dist() %>% 
+  as.matrix()
+
+abs(euclidean - correl)
+```
+## 8.
+
+We are asked to try a few different methods of getting proportion variance explained.
+
+The first PC explains almost all variation.
+
+```{r}
+arr_comp <- prcomp(USArrests)
+
+arr_comp$sdev / sum(arr_comp$sdev)
+
+total_var <- sweep(as.matrix(USArrests), MARGIN =2, STATS = colMeans(USArrests), FUN = `-`)^2 %>%
+  sum()
+
+arr_comp$x^2 %>% colSums() / total_var
+```
+
+
+
+
+## 9.
+
+We are asked to do hierarchical clustering on good old USArrests.
+
+
+I don't see any obvious patterns among three clusters because the data weren't scaled beforehand.
+```{r}
+clust_unscaled <- hclust(dist(USArrests))
+plot(clust_unscaled)
+
+cutree(clust_unscaled, k = 3) %>% 
+  enframe(name = "state", value = "cluster") %>% 
+  arrange(cluster)
+```
+
+Now we see logical clusters: SOuthern states, populous states, and an odd third cluster of the remainder. Since this makes more sense, and because the USArrests data are on wildly different scales, scaling is definitely warranted.
+
+```{r}
+clust_scaled <- hclust(dist(scale(USArrests)))
+
+cutree(clust_scaled, k = 3) %>% 
+  enframe(name = "state", value = "cluster") %>% 
+  arrange(cluster)
+```
+
+## 10.
+
+We are now asked to do K-means and hierarchical clustering on simulated data.
+
+```{r}
+set.seed(1)
+mapping <- c( "1"= "-3", "2" ="4",  "3"= "7")
+shifts <- sample(rep_len(c(-3, 4, 7), 60)) %>% 
+  set_names(names(mapping[match(as.character(.), mapping)]))
+                   
+X <- matrix(rnorm(180), ncol = 3) %>% 
+  sweep(MARGIN = 1, STATS = shifts, `+`)
+
+rownames(X) <- names(shifts)
+
+```
+
+
+The clusters are very clearly differentiated. One component captured 80% of variance.
+```{r}
+toy_pca <- prcomp(X)
+setNames(as_tibble(toy_pca$x), nm = c("PC1", "PC2")) %>% add_column(class = names(shifts)) %>% 
+  ggplot(aes(x = PC1, y = PC2, col = class)) +
+  geom_point() +
+  lims(x = c(-12, 12), y = c(-2,2))
+
+toy_pca$sdev / sum(toy_pca$sdev)
+```
+
+Obviously, setting the wrong $K$ gives very bad results.
+```{r}
+toy_kmeans <- map(c(2,4), ~kmeans(X, centers = .x, nstart = 50))
+map(toy_kmeans, "cluster") %>% {setNames(cbind.data.frame(names(shifts), .), nm = c("Actual", "2-cluster", "4-cluster"))}
+```
+
+The classification is dead accurate for class 3 and wrong for every other class. This makes sense: we were using only the first two principal components, so we only had the variance within the first two variables. The component vectors have 0 correlation, so closer distances actually indicated lee similar points. So the classifications for the first two labels were reversed, with the third being left out.
+```{r}
+pca_k <- kmeans(x =toy_pca$x[,1:2], 3, nstart = 50)
+cbind(pca_k$cluster, names(shifts))
+
+```
+
+
+If we scale the data, the result is as accurate as using PCA. Interestingly, PCA is also scale-sensitive, but we did not scale the data before doing the PCA. It looks like the k-means algorithm is more sensitive to differing scales.
+
+```{r}
+k_scaled <- kmeans(scale(X), 3, nstart = 50)
+tibble(x1 = X[,1], x2 = X[,2], class = k_scaled$cluster) %>% 
+  ggplot(aes(x = x1, y = x2, col = factor(class))) +
+  geom_point()
+```
+
