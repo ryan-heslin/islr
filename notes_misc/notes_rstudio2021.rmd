@@ -1,0 +1,179 @@
+
+
+# Keynote
+
+Stable functions are immune to breaking changes, such as
+
+1. Argument removal
+2. FUnction removal.
+3. Narrowing of valid arguments
+4. Changing output type
+
+Non-breaking changes include:
+
+1. Output changes - these do not break the code itself, but may break yours!
+2. Increasing input scope
+
+Stable functions are deprecated well in advance of breaking changes
+
+For example, tibble::data_frame was deprecated because it was misleadingly named. Calling it gets a warning.
+
+```{r}
+library(tidyverse)
+data_frame(x =1)
+```
+This generates a warning every session it is invoked.
+
+Individual arguments or argument definitions may be deprecated (e.g., nest())
+
+
+_Superseded_ functions are more  advised against in favor of better alternatives. For example, even Hadley admits gather and spread were too hard to use, so they were replaced.So they were superseded in favor of the pivot family. 
+
+Superseded functions will not be broken, but should be avoided in new projects. Superseded packages like plyr and reshape will linger indefinitely.
+
+
+_Off-label usage_ is perilous
+For example, use c() to convert a factor to numeric codes. 
+
+Also, using which subsetting as an NA filter. This is perilous because the function authors do not intend these side effects and may change chem without warning. It also makes your intentions harder to understand.
+
+```{r}
+c(factor(letters))
+
+df <- tibble(x = c(1,2,NA),
+             y = c("a", "d", "h"))
+df[which(df$x==1),]
+```
+
+To avoid off-label usage, read the documentation and carefully understand the intended usage. Better, review other people's code and learn to discern intent from the usage.
+
+Even more dangerous is _unknowingly_ relying on a side effect. When incandescent traffic lights were replaced with LEDs, cities were surprised to find they froze over in the winter because LEDs generate little heat.
+
+RStudio avoids these dangers through frequent R CMD checks, dialogue with the community (mailing lists to come!), and striving for big improvements for many people that cause few problems for others.
+
+
+If you really fear breaking changes, opting out of package changes entirely is an option. The renv package will isolate each project environment, ensuring it always uses the same versions of the same packages. There are also packages that retain snapshots of CRAN, though this does not work for non-CRAN packages.
+
+## Questions
+
+ Magrittr will not be superseded by the R pipe and should continue to work in almost all cases.
+ 
+ R4DS second edition will have more emphasis on obtaining data, advanced dplyr use, and a revised modeling section.
+ 
+ tidymodels is completely superseding modelr. It's outside the core tidyverse for unknown reasons.
+ 
+ NSE was the right choice; it's R's fundamental advantage over Python. Ambiguity is worth the convenience.
+
+
+# "Always Look on te Bright Side of Plots"
+
+ggplot is designed to make it possible to translate vague ideas into refined visualizations - much as natural languages translate ideas into finished sentences.
+
+## Mapping mishaps
+
+Often text labels are mapped to x and y coordinates. But this is crude and not very efficient. A common mistake is to put the hardcoded positional label inside aes, causing it to inherit from the data. Use annotate to mark a single coordinate.
+
+## Scale snafus. 
+
+Remember, coord_cartesian zooms in without removing out-of-bounds values, while limits functions do not.
+
+```{r}
+mtcars %>% ggplot(aes(x = disp, y = mpg )) +
+  geom_point()+
+  ylim(c(NA, 25)) +
+  geom_smooth()
+  
+  
+```
+
+## Theme threats. 
+
+Theme elements follow a hierarchy:
+
+Text  
+1.Axis text  
+a.axis.text.x
+i.axis.text.x.right
+b.axis.text.y
+
+With each axis text also having positional elements (bottom, top, etc). These enable separate adjustments for axes. Beware theme settings for rarely used elements.
+
+_The most specific level wins_. So a setting for axis.text.y.right will preempt one for axis.text.y.
+
+Best obscure but useful trick: creative uses of reduction, recursive AST walking.
+
+Visual graph appraisal:
+
+Depends on situation and purpose, reserving comprehensive tweaks for more serious situations.
+
+# SQL and R
+
+DBplyr translate dplyr code into SQL:
+```{r}
+library(dblyr)
+mtcars %>% select(-hp) %>% 
+  show_query()
+```
+
+This has limitations; anonymous functions have to be decomposed, for example
+```{r}
+mtcars %>% mutate(across(everything(), is.na)) %>% 
+  summarize(across(everything(), sum))
+```
+
+But even correct translations are often ugly, hard to read, and hard to optimize. There's no avoiding SQL,. And almost all technical personnel will know it.
+
+Luckily, learning is easy. Each primary dplyr verb has a SQL counterpart. The hardest part is that the order of operations for grouping, mutating, and summarizing is different.
+
+When editing a SQL file in Rstudio, the right shebang line will give you previews of queries from the database, including inline chunk previews.
+
+A dedicated SQL IDE will give you autoformatting, syntax highlighting, and code completion. 
+
+The riskiconn package, included in dbply, will autocache queries.
+
+Learning SQL isn't too hard with R experience.
+
+# Visualizing the Pandemic for a Mass Audience
+
+ Data has never had a wider audience. The first step is the deceptively simple question of how people understand charts. Technical details are less important than subtleties of aesthetics. Most people glance briefly at charts and recall little. They first scan the title, then look at the x-axis, retaining words far better than visualizations. Many people struggle to interpret charts and are greatly aided by text elements. 
+ 
+ The coronavirus case growth by country chart originated in an email. The elements are simple: colored lines of logged cases of, with days since the first on the x-axis. Refinements added another vertical axis, annotations,a and a reference line. The title gave the takeaway: in most countries, the spread occurred at the same rate. These text elements summarized the main points for an uninformed audience.
+ 
+```{r}
+tibble(y1 = rep(mtcars$mpg, 2), y2 = c(mtcars$mpg*2, rep(NA, 32)), x = 1:64) %>%
+  ggplot(aes(x = x, y = y1)) +geom_line() +
+ geom_line(aes(y = y2))
+
+```
+ 
+A linear scale would have obscured the key point: relative rates of change. But many readers did not understand the log scale. This drew objections, since some readers complained the log scale made the growth look slower than it was. Feedback is crucial, and leaving an email address to solicit it is good practice.
+
+One technical problem was how to communicate the 7-day moving average, which was always lower than the last data point (since cases were increasing). But an average was necessary because the real data were too noisy. One alternative was to use a smoothing spline (to force the endpoints to be continuous). While the spline gave a truer representation of the trend, it was too confusing for a mass audience. Such technical solutions are often too clever to use.
+
+Animation is far more striking than static charts. 
+
+Takeaways:
+
+1. Text is critical.
+2. You are responsible for misunderstandings.
+3. You must consider the audience's beliefs and avoid offending them.
+4. Stay to accept feedback.
+5. Ease of comprehension before all else.
+6. Animation is valuable.
+
+## Modeling Q&A
+
+Tidymodels will likely have production integration around early 2022. R models are not as hard to put in production as is often claimed; packages like plumber make API development feasible.
+
+A promising future direction is automation and preprocessing to try many different types of models. An in-development function will cross several model types and automatically fit them. tidymodels will never be fully automatic, however.
+
+If A-B testing shows a product change causes only minor improvement, switching is probably unwarranted; better to make a few big changes.
+
+Kush begins by fitting nonparametric models of different types (boosted tree, KNN, neural network, etc.). If any are promising, then use a simpler parametric model and try to replicate the more complex one's success. Grid-search, trying different combinations of hyperparameters (those external to the model.)
+
+# Day 2
+
+Ensemble models sacrifice interpretability for accuracy.
+Accurate but uninterpretable models are often not useful.
+
+When using categorical encoding, use dimensional reduction to reduce variables to pairs and plot them.

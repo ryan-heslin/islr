@@ -1,0 +1,307 @@
+---
+title: "ISLR Chapter 3 Notes"
+author: "Ryan Heslin"
+date: "2/16/21"
+output: pdf_document
+---
+
+# Questions
+
+1. What is the purpose of $\beta_0$?
+2. What does it mean for the estimators to be unbiased?
+3. How can we find the variance of the estimators?
+4. What is the distinction between the true regression line and the true function?
+5. How do we test the significance of betas?
+6. What is the interpretation of RSE
+7. How does RSE differ from R squared?
+8. What are the implications of choosing contrasts for factors in qualitative models?
+9. What problem with dummy variables do interaction terms remedy?
+10. When is an interaction term appropriate? How should the main effects be handled?
+11. Why do  errors violate the model assumptions?
+12. What problem do outliers cause?
+13. What is leverage? How can it be spotted?
+14. How can the VIF be used to diagnose multicollinearity?
+
+## 3.1 Simple Linear Regression
+
+In the simple model,
+\[Y=\beta_0+\beta_1X_1+\epsilon\]
+the betas represent the intercept and slope, respectively. They are unknown and must be estimated.
+
+The model is fit by minimizing RSS. The model is fit by projecting the response onto the data matrix.
+
+Linear regression is extremely simple but surprisingly potent. 
+
+RSS us defined as th sum of squared distances from each point to the regression line:
+
+\[RSS =\sum(y_i-\hat{y})^2\]
+
+By dividing $\bar{y}$ by this quantity, we can get the percentage error of our estimates.
+
+The beta estimators turn out to be:
+
+\[\beta_1=\frac{\sum^n_{i=1}(x_i-\bar{x})(y_i-\bar{y})}
+{\sum^n_{i=1}(x_i-\bar{x})^2}\]
+
+\[\beta_0=\bar{y}-\beta_1\bar{x}\]
+
+$\beta_0$ adjusts for the variation _unexplained_ by the regression, since $E(\hat{y}=\bar{y})$. Any difference between the observed mean of the response, and that obtained by multiplying the predictor by $\beta_1$, needs to be adjusted for. The intercept reflects the fact that $Y$ takes on a nonzero value even when $X$ is ignored.
+
+Unless the data matrix is wide, there is always a unique set of $\beta$ that minimizes RSS.
+
+### 3.1.2 The Coefficient Estimators
+
+For the simple model, $\beta_0$ represents the expected value when $X=0$, and $\beta_1$ the slope of the line in terms of $Y$. However, we cannot directly assess their accuracy because the regression line of the _true regression function_ (we assumed linearity) cannot be observed. _This line does not vary even with different samples_, but the _estimated_ line does.
+
+An estimate is _unbiased_ if its expected value equals the paramter; i.e., the mean of infinite samples equals the parameter. For estimating the sample mean
+\[E(\hat{\mu}=\mu\]
+
+So an unbiased parameter is variant (different samples yield different results) but not systematically wrong.
+
+The variance of an estimator is the square of its standard error:
+
+\[Var(\hat{\mu})=SE(\hat{mu})^2=\frac{\sigma^2}{n}\]
+which is just the population variance divided by $n$. 
+
+The variance (not SE) formulas aren't pretty:
+\[SE(\hat{\beta_0}^2)=\sigma^2\Bigg(\frac{1}{n}+\frac{\bar{x}^2}{\sum^n_{i=1}(x_i-\bar{x})^2}\Bigg)\]
+\[SE(\hat{\beta_1}^2)=\frac{\sigma^2}{\sum^n_{i=1}(x_i-\bar{x})^2}\]
+
+So for $\beta_0$ it is the variance per observation (the average individual error) added to the variance times the observed mean, divided by sum of squares (the "sample" of variation we are trying to explain). FOr $\beta_1$, it is just the MSE divided by the sum of squares. Estimates are more reliable when $Y$ has _less_ variance (resulting in less to explain and a lower $\sigma^2)$ or when $X$ is more variant (a higher sum of squares, providing more information for the estimator).
+
+This assumes that the errors are uncorrelated and normally distributed and the variance of the errors vector is $\sigma^2$, which is MSE.
+
+We use SE's to compute confidence intervals, conventionally $\pm2$ SE's for a 95% interval. The exact computation would use the 97.5% quantile of the $n-p$ t-distribution, but close enough.
+
+We test the betas' significance using a t-statistic (note the expected value for each is 0):
+
+\[t=\frac{\beta_1-0}{SE(\beta_1)}\]
+or, equivalently, checking if the CI overlaps 0.
+
+### 3.1.3 Assessing Model Accuracy
+
+_Residual Standard Error_ (RSE) accounts for the fact that, since error is inherent to the model, even predictions using the true function (the population line) would not be perfectly accurate. It is the average deviation from the true regression line. The formula is simply 
+
+\[RSE=\Bigg\sqrt{\frac{RSS}{n-2}}\]
+which the average residual per degree of freedom. This follows from the fact that the residuals _themselves_are prone to error, because noise exists in the function we are trying to emulate. RSE is generally higher for worse-fitting models.
+
+_R squared_ expresses fit as a proportion rather than in units of Y:
+\[R^2 = \frac{TSS-RSS}{TSS}=1-\frac{RSS}{TSS}\]
+so more variant data demand more work to explain. R squared is of course the proportion of variation explained. It is the square of $r$, which makes intuitive sense: $r$ is the proportion of area bounded by each mean-centered $(x,y)$ pair with the same sign
+
+Interpreting R squared depends on the situation. Lower values are permissible if the true  _linear_ function is at best a weak approximation of the true _function_.
+
+## 3.2 Multiple Linear Regression
+
+In the multiple regression setting, each $\beta_j$ represents _the average effect holding all else fixed_. Estimates will significantly change from single-variable regressions because of this _ceteris paribus_ property. In simple regression, the predictor gets "credit" for the effects of potentially stronger predictors with which it is correlated; these spurious correlations vanish when the correlated variables are added.
+
+In this setting, the regression "line" (the $X^TX$ subspace into which we are projecting $Y$ is a hyperplane with dimension $p$. It still minimizes distance from each point in a $p+1$-dimensional space.
+
+### Questions Involved In Linear Regression
+
+1. Is there a relationship between the response and predictors?
+
+As in single regression, we must test whether each coefficient is significant. We assess this using the F statistic:
+
+\[F = \frac{\frac{TSS-RSS}{p}}{\frac{RSS}{n-p-1}}\]
+
+which compares the sum of squares explained per predictor to the RSS per degree of freedom. Note this ratio is in units of the response. 1 is the minimum value, and higher values are better. Here SSW (the denominator) is the explained variation per predictor, and SSB (between groups) is RSS per degree of freedom. This works because the null hypothesis is 
+\[E\Bigg(\frac{RSS}{n-p-1}\Bigg)=\sigma^2\]
+and
+\[E\Bigg(\frac{TSS-RSS}{p}\Bigg)=\sigma^2\]
+
+that is, adding predictors should not help explain RSS.
+
+Note, however, that large datasets often have falsely significant $F$, since the high $n$ inflates the denominator, meaning lower F-statistics qualify as significant. (Remember, this is the null hypothesis distribution,a assuming normally distributed errors). 
+
+To test whether a _subset_ of $q$ coefficients are significant, we use a modified F test:
+
+\[F = \frac{(RSS_0-RSS)/q}{RSS/(n-p-1)}\]
+
+where $RSS_0$ is the RSS using $p$ predictors, so we assess the TSS we explain for each predictor of the subset. It turns out individual predictors' t statistics are the square roots of the F-statistic computed on just that predictors' (i.e,. the improvement that variable adds to the model after accounting for others). However, the overall F statistic adjusts for number of predictors, while with a large $p$ falsely significant t-statistics are likely.
+
+2. Decide on Important Variables
+
+In most cases we are interested in narrowing the model to genuinely related predictors.
+
+The main approaches are:
+
+a. Forward selection (start from best, work downward)
+b. Backward selection (start from all, drop worst)
+c. Mixed (start with forward, drop variables if their p-values fall below a threshold)
+
+As more variables are added, the p-values of existing variables may decline becasue of multicollineariy.
+
+3. Model Fit
+
+Even worthless variables always increase $R^2$, because the denominator (TSS) remains constant, while something is added to the sum of squares explained. 
+
+Note that RSE _can_ increase if weakly related predictors are added. The RSE formula generalizes to:
+\[RSE = \sqrt{\frac{1}{n-p-1}RSS}\]
+so a dding an extra predictor that explains little will increase the denominator.
+
+4. Predictions
+
+There are three sources of error when the model is actually fit:
+
+a. Between the regression flat and the true regression function, represented by the estimators' standard error. _Confidence intervals_ present this
+
+b. Between the true regression model and the true function (model bias)
+
+c Irreducible error from $\epislon$. _Prediction intervals_ represent this by combining error in the estimators and in the true function.
+
+More concretely, CI's represent uncertainty for average predictions, PI's uncertainty for predictions given particular points.
+
+# 3.3 Other Considerations in the Regression Model
+
+## 3.3.1 QUalitative Predictors
+
+For a two-level predictor, simply create a dummy variable like so:
+
+\[x_i=\Bigg\{\begin{align}
+1\quad\text{if female}\\
+0\quad\text{if male}
+\end{align}\]
+
+such that the $\beta_1$ for gender is the mean response for females. The choice of levels tin coding has no impact on the fit but of course impacts representation of the coefficients.
+
+For non-binomial predictors, an extra dummy is created for each additional level, with one again serving as the "default" (using a typical 0-1 scheme). That makes the intercept the mean for the group without its own beta. Again, _n-1 levels get their own beta_ with the usual properties.
+
+To assess the overall impact of a multilevel factor, use an F test on the $n-1$ betas it comprises.
+
+## 3.3.2 Extensions of the Linear Model
+
+We often must remove the  and linearity restrictions.
+
+To relax , we consider _interactions_: situations where an increase in one predictor alters _the beta coefficient_ of the other, such that the slope changes. An interaction term is added by taking the product of two predictors:
+
+\[Y =\beta_0+\beta_1X_1+\beta_2X_2+\beta_3X_1X_2\]
+
+so adjusting $X_2$ not only changes $Y$ but changes $X_1$'s _effect_ on $Y$.
+
+An example would be a factory where adding more production lines multiplies the productivity of existing workers.
+
+We can rewrite the above
+
+\[Y=\beta_0+X_1(\beta_1+\beta_3X_2)+\beta_2X_2\]
+
+so $X_1$ interacts both with its own beta and the $X_2$'s interaction with _its_ beta.
+
+One caution: even if an interaction term has significant p-values where the _main effects_ of the constituent predictors do not, the main effects must be included.
+
+Note that if interactions are not applied to qualitative variables, multiple parallel lines are plotted, one for each level of the predictor. For example:
+
+
+```{r}
+library(tidyverse)
+ggplot(iris, aes(Sepal.Width, Sepal.Length, color = Species)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y~x)
+```
+
+If an interaction is included, the slopes will now differ.
+
+```{r}
+library(tidyverse)
+lm(data = iris, Sepal.Length ~ Sepal.Width*Species) %>% 
+  broom::augment() %>% 
+  ggplot(aes(Sepal.Width, .fitted, col = Species))+
+  geom_point() +
+  geom_line()
+```
+
+For example, 
+
+\[Y=\Bigg\{\begin{align}
+(\beta_0+\beta_2)+(\beta_1+\beta_)X_1\\
+\beta_0+\beta_1X_1
+\end{align}\]
+
+Here the intercepts are respectively $\beta_0+\beta_2$ and $\beta_0$, wile the slopes are $\beta_1+\beta_3$ and $\beta_1$, respectively. SO for the level of the factor with its own estimator, the slope and intercept are both altered from a baseline, which is equivalent to the other level. The model assumes that a change in $X_1$ has different effects on each level of $X_2$.
+
+Nonlinear Relationships
+
+High-degree polynomial terms often have low p-values but tiny coefficients - signs of an overly flexible fit.
+
+## 3.3.3 Potential Problems
+
+Dealing with these is "as much an art as a science"
+
+
+1. Nonlinear Data
+
+A residual vs. fitted plot should have no clear trend in the residuals. If such a trend does appear, the data are nonlinear; a linear approximation is more accurate over some parts of the range than others. The best cure is to transform some predictors by logging, squaring, or the like.
+
+```{r}
+plot(lm(data=mtcars, mpg ~poly(hp, degree =2)))
+```
+
+2. Error Term Correlation
+
+Each $\epsilon_i$ (remember each is a single observation's residual) should be uncorrelated with the others; that is, it should not be possible to infer the sign of the $i+1$th residual from the sign of the $ith$. That is called _autocorrelation_, and is computed as the correlation between a vector and its lag (or lead) by 1 (or, more generally, the correlation of $x_i$ with $x_j$, where $j\neq{i}$. If this assumption is violated, the standard error estimates underestimate the true values (since they are no longer independent), and confidence and prediction intervals are too narrow.
+
+```{r}
+lm(data = mtcars, mpg ~hp) %>% 
+  broom::augment() %>% 
+  {cor(.$.resid, lag(.$.resid), use = "complete.obs")}
+```
+
+If, for example, each observation was recorded twice, the SE estimators would act as if the sample size was $2n$, but the true CI's would shrink by $\sqrt2$.
+
+Autocorrelation is especially common among time series data, or where observations are related in some way (e.e., members of the same family).
+
+Overall, correlated errors means the data contain less useful information than the assumptions would have it.
+
+3. Non-Constant Error Variance
+
+We assume the variance of each error $\epsilon_i$ does not vary over the range of the residuals; the extreme points will have the same variance as ones in the center. (The variance of an observation _is_ the error, since $E(\bar{\epsilon)}=0$The usual signal is _heteroscedascity_: the dreaded funnel shape in the residuals plot.
+
+This can be cured by log-transforming or taking the square root of the response, squashing the extreme error values.
+
+4. Outliers
+
+Outliers occur when any $y_i$ is very far from the predicted value for the corresponding $x_i$.
+
+Outliers may have surprisingly little impact on fitted values, but they add greatly to SSE and thus drive up RSE and thereby lower R squared. Dropping outliers is advisable when they can be traced to data errors.
+
+5. High Leverage Points
+
+A complement to outlier, high leverage points occur where $x_i$ is unusual. Unlike outlier, they have a major impact on the fitted line (since the abnormality propagates through $X^TX$). A subtlety arises in multiple regression: an $x_i$ may consist of values not unusual in themselves, but that represent an usual _combination_ of values.
+
+The leverage statistic quantifies this concept, with higher scores indicating more leverage:
+
+\[h_i=\frac{1}{n}+\frac{x_i-\bar{x})^2}{\sum^n_{i'=1}(x_{i'}-\bar{x})^2}\]
+
+Leverage scores are bounded to $[\frac{1}{n}, 1]$. It is the ratio of that one observation's deviation to the sum of squares of all _other_ observations. So the more unusual the observation relative to the data, the higher the leverage (the more it distorts $X^TX$.)
+
+6. Collinearity
+
+Collinearity refers to the correlation of two or more predictors. It makes it challenging to tease out the individual effects of the predictors. If two or more predictors are collinear, many  different linear combinations of $X^TX$ will give very similar RSS. The contour plot representing different RSS values resembles a thin ellipse. As a result, the betas are not robust estimates of each predictor's effects, since the best fit is very similar to many others.
+
+Because collinearity drives down the accuracy of the coefficient estimates, it increases SE, making insignificant coefficients more likely. If collinearity exists, one of the predictors' coefficients is likely to be "masked" by the other.
+
+An easy way to check is the correlation matrix, although it cannot detect true _multicollineairty_ that affects groups of three or more predictors. In this situation, use the _variable inflation factor_, or VIF - the ratio of a predictor's variance in a multi-variable regression to to its variance in a _single_-variable regression. With a minimal VIF of 1, no multicollinearity exists; a value above 5 or 10 indicates the danger zone. The formula is:
+
+\[\frac{1}{1-R^2_{X_j|X_-J}}\]
+where $R^2_{X_j|X_-J}}$ is the $R^2$ of a regression of $X_j$ onto _all other predictors_ (multiple R squared). If it is high, then some other predictor explains much of its variation,r educing the denominator and driving up the VIF.
+
+The solutions to this problem are to drop one of the problematic variables, or to condense them into an averaged, standardized variable.
+
+In summary:
+
+```{r}
+tibble(Problem = c("Nonlinear Data", 'Correlated Errors',
+                         "Non-Constatn Error Variances", "Outliers",
+                         "High Leverage Points", "Multicollinearity"),
+             Signs =c("Trend in Residuals", "Residual Autocorrelation",
+             "Heteroscedasity", "Distant Points", "High Leverage Scores",
+             "Correlated Preidctors or High VIF"),
+             Solution = c("Log-Transform Predictors", "Not Clear",
+             "Log-Transform Response", "Remove or Accept", "Reomove or Accept",
+             "Drop or Combine")) %>% 
+  knitr::kable()
+```
+
+# 3.5 KNN Regression
+
+KNN regression will typically outperform linear regression on low-dimensional data, unless some stupidly low $K$ is chosen. But as dimension increases, KNN becomes less reliable because each point becomes further and further from its nearest neighbors, making the average less reliable. Regression does not suffer this problem, even in high dimensions.

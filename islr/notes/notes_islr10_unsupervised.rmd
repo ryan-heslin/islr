@@ -8,7 +8,7 @@ output: html_document
 # The Challenge of Unsupervised Learning
 
 # Review Questions
-1. What is the primary difficulty of unsupervised compared to supervised learning?
+1. What is the primary difficulty of unsupervised learning compared to supervised learning?
 2. What is the fundamental difference between hierarchical and K-means clustering?
 3. In what situation will hierarchical clustering give misleading results?
 4. What algorithm does K-means clustering use?
@@ -32,6 +32,7 @@ in other words, maximizing the varaince of a linear combination of the predictor
 
 Since each component must be uncorrelated with the previous ones (both as a property of positive semidefinite eigenvectors and a constraint of the optimization function), they provide a basis for projecting the data. There are actually $\min(n-1, p)$ PC's.
 
+PCA is a specialc case of $QR$ decomposition, where we use the eigenvectors of $A^TA$ rather than $A^TA$ itself. Since the eigens are the axes about which the matrix transformation takes place, thise ensures each PC maximizes summed squared distance from the data points.
 PC's can be plotted to visualize correlations in the data:
 
 ```{r}
@@ -130,7 +131,6 @@ Proximity along the horizontal axis is meaningless. There are $2^{n-1}$ possible
 TO identify clusters, we cut the dendrogram horizontally at some point on the vertical axis. The uppermost branches beneath the cutpoint are the clusters, each containing observations in its leaves. The lower on the scale the cut, the more clusters; the extremes are $n$ (the bottom) and 1 (the top). The choice of cut height is analogous to $K$ for K-means. Conveniently, the decision can be made after the dendrogram is produced and chosen simply by eye.
 
 Hierarchy (clusters nested within clusters) is not always a sound assumption. Optimal splits might cut across intersecting groups, such as people of both genders in three nationalities. In the case, a different algorithm should be chosen.
-
 
 ## The Hierarchical Clustering Algorithm
 

@@ -1,0 +1,73 @@
+---
+title: "Lab 8"
+author: "Ryan Heslin"
+date: "10/3/2020"
+output: pdf_document
+---
+## 1
+1a. Alt: People who work >5 hours a day on computers have worse eyesight than those who do not
+Null: Computer workers do not have worse eyesight than non-computer workers
+1b. Alt. Incubated babies have higher rates of claustrophobia than nonincubated babies
+Null: Incubated babies have about the same rates of claustrphobia as nonincubated.
+1c. Offices with plants have fewer sick days than those without plants.
+Null: Offices without plants have about the same sick days as those with plants
+
+## 2
+Type I: Reject null hypothesis despite alternative hypothesis being false
+Type II: Fail to reject false null hypothesis
+
+Here I write code to manually compute the statistic.
+The result is the same as R's chi-squared function.
+
+```{r #4}
+
+library(tidyverse)
+mortgage = tibble(race = c("White", "Black"), Approved = c(720, 30), `Not Approved` = c(130, 10), total = Approved  + `Not Approved`)
+mortgage
+
+expected = tibble(race = c("White", "Black"), Approved = (sum(mortgage$Approved) * mortgage$total) /sum(mortgage$total), `Not Approved` = (sum(mortgage$`Not Approved`) * mortgage$total) /sum(mortgage$total))
+
+expected
+chisq <- mortgage %>% select(c(Approved, `Not Approved`)) %>% 
+  imodify(~{((.x - expected[[.y]])^2) /expected[[.y]]}) %>% sum()
+
+mortgage %>% select(-c(race, total)) %>% chisq.test(correct = FALSE)
+```
+
+## 5
+To conduct a dependent samples t-test, we divide the mean of differences by the sample standard deviation
+c. The t-statistic for p = .05 for n = 25 is  about 1.71. Since this is a 1-sided test, that is the cutoff value, and the result is not signnifcant.
+However, the sample size is less than 30, and we don't know if the population distriubtion is normal, so even using the t distribution here is questionable. The study should have used a much larger sample size.
+
+In any case, even if the result is signficant, we have no way of knowing if a 10-point improvement is substantial.
+
+
+```{r}
+s <- 4 * sqrt(25)
+test_stat <- (10 -0)/4
+t <- qt(.95, 24, lower.tail = T)
+confint <- c(10 - t*4, 10 + t*4)
+```
+
+##6
+
+A rival hypothesis might include population density as a predictor, since cities are more expensive than less dense areas.
+Sure enough, it improves the model R squared.
+```{r}
+library(foreign)
+states <- foreign::read.dta("C:/Users/heslinr1/Documents/American University/Classes/Fall 2020/PUAD 601/states.dta")
+
+states %>% ggplot(aes(college, income)) +
+  geom_point()
+cor(states$college, states$income)
+
+mod <- lm(data = states, income ~ college)
+mod %>% confint()
+mod %>% broom::tidy()
+mod %>% broom::glance()
+
+lm(data = states, income ~ college + density) %>% broom::glance()
+
+
+```
+

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash$
+$
+open2 () {$
+	touch $1$
+	open $1$
+echo "Created $PWD/$1"$
+}$
+$
+$

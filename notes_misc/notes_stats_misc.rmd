@@ -1,0 +1,167 @@
+# Miscellany
+
+Why does standard error decline with sample size? Population variance $\sigma^2$ is the average of the _individual_ observation's deviation from the mean. The variance of of a _sample_ of observations (average squared distance from the population mean) is this quantity divided by $n$ (individually extreme observations cancel out). To get the standard deviation of the sampling distribution, we just take the square root of this variance, getting the standard error $\frac{\sigma}{\sqrt{n}}$.
+
+To construct a confidence interval, multiply the standard error by the z-score of the desired width (usually 1.96 for 95%) or the sample's t-statistic for the desired alpha level (for the t-distribution).
+
+Compute a standard error of the difference of means by taking the square root of the sum of the means' standard errors (if you are pooling SE).
+
+Correlation can also be computed by substituting a standardized score ($\frac{x-\mu_x}{\sigma_{x}}$) for the raw score. This gives a result in units of joint standard deviation. Since correlation is the dot product of two vectors of mean deviations, it obeys the Cauchy-Swartz inequality: the dot product can never be greater than the product of their magnitudes. The dot product is the covariance, and the product of the magnitudes is standard deviation (square root of summed deviations), so the numerator of the correlation formula is guaranteed never to exceed the denominator. So a correlation of 1 or -1 means the vectors $X$ and $Y$ point in the same (or opposite) directions along the same line, so the dot product is maximal; a 0 correlation means they are orthogonal.
+
+Since correlation is the dot product of mean-centered vectors, opposite-signed variation reduces the value, and same-signed increases it. Greater deviations contribute more to the numerator of the fraction (before division by $\sigma{x}\sigma{y}$), hence the sensitivity to outlines. This is also why the result is constrained to $[-1,11]$: increasing any vector element will increase the magnitude by a corresponding around, and that enters the denominator term.
+
+Here's how to manually compute the covmat. Each element is the dot product of two mean-centered vectors
+```{r}
+mtcars %>% modify2(colMeans(.), `-`) %>% 
+  as.matrix() %>% 
+  {t(.) %*% .} / (nrow(mtcars) -1)
+```
+
+## Proportions
+Here is the derivation of the standard error of a proportion:
+\[s =\sqrt\frac{p(1-p)}{n}\]
+
+This can be derived algebraically from the variance formula. Here $m$ is successes and $n$ failures. We multiply the count of each by the difference from the mean, $m/n$.
+
+\[\sum^i_{i=1}(x_i-\bar{x}) =m(1-\frac{m}{n})^2 + (n-m)(0-\frac{m}{n})^2 \]
+\[=m-\frac{2m}{n}+\frac{m^3}{n^2} +\frac{m^2}{n} -\frac{m^3}{n^2}\]
+\[=m - \frac{m^2}{n}\]
+Given $m=p$, we substitute:
+\[=m(1-\frac{m}{n})\]
+\[=np(1-p)\]
+Then divide by $n$ to get the variance:
+\[=p(1-p)\]
+Take the square root for standard deviation:
+\[\sqrt{(p(1-p)}\]
+And divide the standard deviation by $\sqrtn$ to get standard error.
+\[s=\sqrt\frac{p(1-p)}{n-1}\]
+
+## Fixed Effects Models
+
+Fixed effects models compare variation _within_ groups over time, where the group does not vary over time. This is achieved by setting a dummy variable representing membership in each group, scoring each predictor and response value within each group on its deviation from the corresponding group mean, and conducting regression. The within-group mean differences represents the intragroup variation the model should tease out. An example would be variation in demand relative to price across different cities. This method is guaranteed to eliminate unobserved-variable bias so long as all unobserved variables are truly time-invariant. In the model, each group's intercept represents the difference from the base group (the one used to compute the overall intercept of the regression). The intercept can be omitted to ensure each group's beta represents its own intercept. The resulting equation, in its simple form, has an overall slope coefficient for the predictor. The betas for the dummies (0 or 1, typically) represent tat group's intercept relative to the baseline group.
+
+# Variance an ANOVA
+
+Formally, variance is defined as $Var(X)=E((X-E(X))^2)$ - the expected distance of $X$ from its expectation, or mean.This can also be written $Var(X)=E(X^2)-(E(X))^2$, or the difference of the mean of squares and the square of the mean, which follows algebraically. 
+
+Variance is insensitive to constants (every $X$ gets shifted the same amount), but coefficients of variance terms are squared:
+
+\[Var(a+bX)=b^2V(X)\]
+
+Expectation is additively associative, such that $E(X +Y) = E(X) + E(Y)$. This makes sense - adding averages sums both the numerators and denominators. Variance also behaves this way if X and Y are independent(i.e., $Cov(X,Y)=0$, only true if the data vectors are orthogonal. If not, the variance of the sum is found by expanding the covariance formula:
+
+\[V(X+Y) = V(X) + V(Y) + 2Cov(X, Y)\]
+The doubling of covariance makes intuitive sense, since the product of X and Y already defines an area, it has to be doubled for the terms rather than squared.
+
+This works for the sum of any number of random variables, with a separate covariance term for each interaction.
+
+## ANOVA
+
+ANOVA fundamentally tests whether variation in data stems more from variation  among groups than within them. WHile typically used to compare multiple group means, a special case applies it to regression models. In this setting, it decomposes variation in $y$ into the _regression sum of squares_ and the _sum of squared errors_. The larger RSS is relative to SSE, the better the model. 
+
+\[TSS =RSS+SSE\]
+
+We may as well write out the definitions:
+
+\[TSS = \sum_i^n(y_i-\bar{y}^2\]
+\[SSE = \sum_i^n(y_i-\hat{y}_i)^2)\]
+\[SSR = \sum_i^n(y_i-\hat{y}_i)^2\]
+
+If the regression line lies exactly on a point, then $y_i=\hat{y}_i$. Thus error distance is zero and the regression has completely explained the deviation of $y_i$ from $\bar{y}$. In every other case, some distance remains unexplained by the regression and is attributed to error.
+
+The model assumes RSS stems from a true relationship between $X$ and $y$, and SSE from random error.
+SSR represents the total distance of the regression line from the line $y =\bar{y}$ (the null model, the situation with no relationship). Steeper regression slopes have higher RSS and therefore greater explanatory power. This is also why low TSS suggests no relationship; there isn't much variation that needs to be explained.
+
+Each term has its own degrees of freedom. TSS has $n-1$ df (one sacrificed to estimate $\bar{y}$), RSS $p$, or one for every predictor (being a sum of part of a sum, it can only have one final value), and SSE has $n-2$ (one sacrificed for each beta). Conveniently enough:
+\[n-1 = 1 + n-2\]
+In other words, each predictor recovers a degree of freedom, because its sum of squares is free to vary.
+
+```{r}
+mtcars %>% ggplot(aes(x =wt, y = mpg))+
+  geom_point()+
+  stat_smooth(formula = y ~ x, method = lm) +
+  #stat_smooth(aes(x = vs), formula = y~x, method = "lm") +
+  geom_hline(aes(yintercept = mean(mpg)))
+```
+
+The regression mean square divides RSS by $p$
+
+\[MSR = \frac{\sum(\hat{y_i}-\bar{y)}^2}{p}\]
+It gives the proportion of TSS explained by the average predictor.
+
+The expected value of MSR (which we would expect after infinite resamplings) tells us how we can compare the null hypothesis $\beta_1=0$ to the rival $\beta_1!=0$
+
+The expected value of MSR over $n$ samples is:
+\[E(MSR)=\sigma^2+\beta_1^2\sum_{i=1}^n(X_i-\bar{X})^2\]
+
+or the sum of true deviations scaled by the true beta and added to the average squared error. Meanwhile, EV of MSE, obviously, is $E(MSE) =\sigma^2$, since MSE is nothing but the square root of the average squared distance of $\hat{y_i}$ and $y_i$.
+
+The larger $\beta_1$ (and thus the stronger the relationship), the greater the ratio of MSR to MSE; in the null hypothesis ($\beta_1=0$), the two are equal; i.e., we haven't explained more variation than just randomly  . Note that because of the squaring testing directionality is impossible.
+
+## The F Test
+
+This ratio can be modeled the F distribution, with $\frac{k-1}{n-2}$ degrees of freedom ($k$, in this case, is 1).
+\[F = \frac{\text{explained variance}}{\text{unexplained variance}}\\
+F = \frac{MSR}{MSE}\].
+
+We want to maximize the numerator (between-group variation) and minimize the denominator (within-group variation). A well-defined group will have little deviation from its mean (since its members are similar), and its mean should be distinct from other group means (groups don't overlap). The less members of groups vary with regard to each other(the denominator) compared to how much the groups themselves vary (the numerator), the less likely the differences between groups are due to chance.
+
+The F distribution is in fact the ratio of two chi-square distributions, each with its own degrees of freedom. 
+
+An F-distributed variable may be written:
+
+\[X = \frac{\frac{s^2_1}{\sigma^2_1}\frac{s^2_2}{\sigma^2_2}}\]
+
+where $s$ is the sum of squares and $\sigma^2$ the variance of each separate normal distribution. In cases where the variances are equal, the probability of any 
+
+F-tests may be extended to compare a linear model fitted with $p+m$ predictors to one fitted with $p$ predictors.
+
+Here, F becomes:
+
+\[F=\frac{\Big(\frac{SSE_1-SSE_2}{p_2-p_1}\Big)}{\Big(\frac{SSE_2}{n-p_2}\Big)}\]
+
+where $SSE_i$ is the $ith$ model's SSE. The lower the bigger model's SSE, the higher the denominator (improvement over model 1 averaged by the number of extra predictors). 
+##Detail
+
+Between-group variation (the numerator) is:
+
+\[\sum_{i=1}^Kn_i(\bar{Y}_i-\bar{Y})^2/(K-1)\]
+where $\bar{Y_i}$ is the ith group's sample mean, $\bar{Y}$ the overall mean, and $K$ the number of groups. We want to _maximize_ this quantity. Within-group variation (the denominator) is:
+
+\[\sum_{i=1}^K\sum_{j=1}^{n_i}(Y_{ij}-\bar{Y}_i)^2/N-K)\]
+where $Y_{ij}$ is the jth observation of group $i$ and $N$ is overall sample size. We want to _minimize_ this. The denominator term sums each point's deviation from its group mean for each group. In the regression case, the numerator (expected MSR) represents the average fitted value's deviation from the mean (with higher values indicating more variance explained), while the denominator represents the size of the average residual (unexplained variance).
+
+The p-value, as always, represents the probability of the test statistic, assuming the null. The null distribution assumes both elements of the $F$ ratio are in fact IID random variables with separate chi-square distributions. In the regression case, we also assume equal variances of the two random variables; otherwise $F$ would be scaled by the ratio of variances. Higher values of $F$ are far less likely to arise from chance.For the simple linear model, $P(F) = P(|t|)$ and $F= t^2$, because $K=1$, so $F$ just becomes the ratio of a score to its population variance - the square of $t$.
+
+# Log Likelihood
+
+The likelihood function simply models the probability of observing the given distribution of $X$ for every combination of parameters of the distribution function, assuming $X$ is fixed. It models a hypersurface with a peak at the most probable parameters for the observed data.
+ 
+In the discrete case, with just one parameter $\theta$:
+
+\[L(\theta|x)=p_{\theta}(x)=P_{\theta}(X=x)\]
+where $x$ is the outcome of $X$. The likelihood represents the probability of observing a given $x$ assuming _that value_ of $\theta$, not the converse($p(\theta|x)$)). Again, likelihood means the probability of observations based on parameters, not parameters based on observations. 
+
+For example, if an unknown coin gets HH after two flips, $p(HH)=0.25$.
+
+So assuming the coin is fair:
+\[L(p_H=0.5|HH)=.25\]
+If we assume the coin comes up 70% tails:
+\[L(p_H=0.3|HH)=0.3^2=0.09\]
+The fair coin is most likely. Note the integral of likelihoods need not be 1.
+
+For continuous variables, the equation is:
+
+\[L(\theta|x)=f_{\theta}(x)\]
+or equivalently
+\[L(\theta|x)=f(x|\theta)\]
+It is equal to the probability density function at each $x$ assuming the parameter is truly $\theta$. (The density is the relative likelihood of any value of $x$). 
+
+It does _not_ equal the probability that a given $\theta$ is correct (that would ignore prior probability).
+
+Following some complicated math, we are assured that:
+\[arg\max_{\theta}L(\theta|x_j)=arg\max_{\theta}f(x_j|\theta)\]
+so it is whichever parameter results in the highest probability density at $x_j$.
+
+
+

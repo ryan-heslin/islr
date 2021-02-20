@@ -7,21 +7,28 @@ output: html_document
 
 Resampling allows us to validate models on simulated test data derived from training data.
 
+
+1. Why is the validation approach set not very useful?
+2. How does LOOCV work?
+3. What is the shortcut LOOCV formula?
+4. How does K-folding work?
+5. What bias-variance tradeoff involves K-folding and LOOCV?
+6. 
 # Cross-Validation
 
 ## Validation Sets
 
-This simple approach excludes some training data from fitting, reserving it for validation. After several models have been trained on the data, they can be compared on the holdout set to aid selection.
+This simple approach excludes some training data from model fitting, reserving it for validation. After several models have been trained on the data, they can be compared on the holdout set to aid selection.
 
-There are two big problems with this approach
+There are two big problems with this approach:
 
-1. Results are highly variable, depending on the holdout set selected.
+1. Results are highly variable, since only one holdout set is selected.
 
-2. Holding out obsevations limits those avaliable for training.
+2. Holding out observations limits those available for training.
 
 ## Leave-One_Out Cross-Validation
 
-LOOCV modifies the holdout set appraohc by excluding just one observation. The remaining n-1 are used for training, and the RMSE assessed for the one holdout observation. The process is repeated, cycling through every observation as the holdout and averaging the RMSE of all $n$ iterations.
+LOOCV modifies the holdout set approach by excluding just one observation from each training set. The remaining $n-1$ are used for training, and the RMSE assessed for the one holdout observation. The process is repeated, cycling through every observation as the holdout and averaging the RMSE of all $n$ iterations.
 
 \[CV_{(n)}=\frac{1}{n}\sum^n_{i=1}MSE_i\]
 
@@ -29,11 +36,11 @@ This approach has several advantages:
 
 1. Less bias, due to averaging trials.
 
-2. Always gives same result, since every observation is held out in sequence.
+2. Always gives the same result, since sampling is exhaustive and nonrandom.
 
-For large datasets, $n$ iterations is prohibitive. However, for standard regression, a shortcut formula can be used:
+For large datasets, $n$ iterations is computationally prohibitive. However, for standard regression, a shortcut formula can be used:
 
-\[CV_n = \frac{1}{n}\sum^n_{i=1}\Big(\frac{y_i - \hat{y}_i}{1-h_i}\Big)\]
+\[CV_n = \frac{1}{n}\sum^n_{i=1}\Big(\frac{y_i - \hat{y}_i}{1-h_i}\Big)^2\]
 or the mean of the square of each residual divided by the complement of leverage. This works because leverage falls between $\frac{1}{n}$ and 1, so high-leverage points contribute less to error.
 
 Sadly, this trick only applies for simple and polynomial regression.
@@ -42,11 +49,11 @@ Sadly, this trick only applies for simple and polynomial regression.
 
 This means dividing the data into $k$ equally sized groups, reserving one for validation and training on the others. This is iterated $k$ times, using each fold as the validation set. As before, final MSE is the mean of the iterations.
 
-LOOCV is simply an extreme form of k-folding where $K=n$. K-folding saves resources. These methods generally return similar results, especially where estiamting minimum RMSE.
+LOOCV is simply an extreme form of k-folding where $K=n$. K-folding saves resources. These methods generally return similar results, especially where estimating minimum RMSE.
 
 ## Bias vs. Variance for K-folding
 
-K-folding is often a better estimate of test error than LOOCV. LOOCV gives extremely unbiased models, since only one observation is sacrificed, However, it is highly variant, becuase each model differs from the next by just one observation, so they are highly correlated. Means of correlated quantites are unstable. K-folding, where the training sets do not overlap to the same degree, avoids this problem
+K-folding is often a better estimate of test error than LOOCV. LOOCV gives extremely unbiased models, since only one observation is sacrificed, However, it is highly variant, because each model differs from the next by just one observation, so they are highly correlated. Means of correlated quantities are unstable. K-folding, where the training sets do not overlap to the same degree, avoids this problem
 
 ## Cross-validation and Classification
 
@@ -58,15 +65,14 @@ In general, training error decreases steadily as flexibility increases, but test
 
 # Bootstrapping
 
-Imagine we want to estiamte a quantity, $\alpha$, that minimizes $Var(\alpha{X} +(1-\alpha)Y)$, where X and Y are random variables. We can simualte $X$ and $Y$ by repeated sampling, estiamte $\alpha$ for each bootstrap, then take the mean.
+Imagine we want to estimate a quantity, $\alpha$, that minimizes $Var(\alpha{X} +(1-\alpha)Y)$, where $X$ and $Y$ are random variables. We can simulate $X$ and $Y$ by repeated sampling, estimate $\alpha$ for each bootstrap, then take the mean.
 
-We randomly sample n observations from the data, with replacement. Repeated observations are therefore likley. 
+We randomly sample $n$ observations from the data, _with replacement_. Repeated observations are therefore likely in each draw. 
 
 For the estimation of $\alpha$ above, the standard error is:
 \[SE_B(\hat\alpha)= \sqrt{\frac{1}{B-1}\sum^{B}_{r=1}
 \Bigg(\hat\alpha^{*r}-\frac{1}{B}\sum^{B}_{r'=1}\hat\alpha^{*r'}\Bigg)^2}\]
 
-the mean of the mean of each estimate's deviation from the mean of the other estimates.
-
+or the mean of the mean of each estimate's deviation from the mean of the other estimates,
 where $B$ is the number of bootstrap samples.
 

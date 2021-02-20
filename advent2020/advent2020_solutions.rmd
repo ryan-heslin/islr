@@ -1,0 +1,550 @@
+# Day 11
+```{r}
+inpt <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input11.txt")
+l <- str_length(inpt[1])
+grid <- map(inpt, ~str_split(.x,"(?=[L\\.#])(?<=[L\\.#])")) %>% 
+  map(unlist) %>% 
+  map(set_names, nm = seq(1,l) %>% as.character()) %>% 
+  bind_rows() 
+rownames(grid) <- seq(1, nrow(grid))
+grid <- as.matrix(grid)
+
+checks <- which(grid != ".") %>% {set_names(., nm = .)}
+offset <- nrow(grid)
+MAX <- length(grid)
+
+#get susbets for 8 adj. sqaures for each index
+get_subs <- function(check, offset, MAX){
+  
+  #Non-edges
+  if(!check %% offset %in% c(0,1)){
+    out <- c(check - offset -1, check - offset, check - offset + 1,
+             check - 1, check +1, check + offset -1, check + offset, check + offset +1)
+  }else if(check %% offset ==1){#top
+    out <- c(check - offset, check - offset + 1, check +1, check + offset, check + offset +1)
+  }else{
+     out <- c(check - offset -1, check - offset, check -1, check + offset - 1, check + offset)#bottom
+  }
+  out <- out[out > 0 & out <= MAX]
+  out
+}
+
+
+
+
+subs <- map(checks, get_subs, offset, MAX)
+
+
+update_grid <- function(grid, prev = NULL, subs){
+  #browser()
+  #base case: no change
+  if (identical(grid, prev)){
+    return(sum(grid == "#"))
+  }
+  prev <- grid
+  empty <- which(grid == "L")
+  seated <- which(grid == "#")
+  
+  # Get # of adjacents occupied
+  surrounds <- map_dbl(subs, function(inds){
+    sum(inds %in% seated)
+  })
+  
+  # Match current seated and empties to positions fulfilling criteria
+  new_empty <- seated[which(seated %in% as.numeric(names(surrounds[surrounds >=4])))]
+  new_seated <- empty[which(empty %in% as.numeric(names(surrounds[surrounds ==0])))]
+  grid[new_empty] <- "L"
+  grid[new_seated] <- "#"
+  update_grid(grid = grid, prev = prev, subs)
+}
+
+ans1 <- update_grid(grid, subs = subs)  
+
+
+```
+
+```{r}
+test_11 <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input11test.txt") %>% 
+  map(~str_split(.x,"(?=[L\\.#])(?<=[L\\.#])")) %>% 
+  map(unlist) %>% 
+  map(set_names, nm = seq(1,10) %>% as.character()) %>% 
+  bind_rows() %>% 
+  as.matrix()
+test_checks <- which(test_11 != ".", ) %>% {set_names(., nm = .)}
+test_subs <- map(test_checks, get_subs, offset = 10, MAX = 100)
+update_grid(grid= test_11, subs = test_subs)
+```
+
+
+
+```{r}
+get_directions <- function(check, offset, MAX){
+ 
+    col <- check %/% offset + (check %% offset != 0)
+    row <-  check %% offset + offset * (check %% offset == 0)
+    
+    coord_call <- partial(give_coords, check = !!check, offset = !!offset, row = !!row, col = !!col, MAX = !!MAX)
+    
+    out <- list( n = NULL, e = NULL, s = NULL, w = NULL)
+    dirs <- case_when(col ==1 & row == 1 ~ list(c("e", "se", "s")), #top left
+                     col == 1 & row == offset ~ list(c("n", "ne", "e")), #bottom left
+                     col == MAX/offset & row ==1 ~ list(c("s", "sw", "w")), #top right
+                     col == MAX/offset & row == offset ~ list(c("n", "w", "nw")), #bottom right
+                     col == 1 ~ list(c("n", "ne", "e", "se", "s")), #left middle
+                     col == MAX/offset ~ list(c("n", "s", "sw", "w", "nw")), # right middle
+                     row == 1 ~ list(c("e", "se", "s", "sw", "w")), #top middle
+                     row == offset ~ list(c("n", "ne", "e", "w", "nw")), #bottom middle
+                     TRUE ~ list(c("n", "ne", "e", "se",  "s", "sw", "w", "nw")) #middle
+    ) 
+    names(dirs[[1]]) <- dirs[[1]]
+    map(dirs[[1]], ~coord_call(dir = .x))
+}
+
+
+give_coords <- function(check, offset, row, col, MAX, dir){
+  out <- switch(dir,
+         "s" = seq(check+ 1, offset * col),
+         "n" = rev(seq((offset* col) - (offset -1), check - 1)),
+        "e" = seq(check + offset, ((MAX/offset) * offset + row)-offset, by = offset), #exceed by one offset, then subtract
+        "w" = rev(seq(row, check-offset, by = offset)),
+        "ne" = seq(check + (offset - 1), check + (offset -1) * (row -1), by = offset - 1), # check whther exhaust
+        "se" = seq(check +(offset + 1), check + (offset+1) * (offset - row), by = offset + 1), # rows or columns first
+        "sw" = rev(seq(check - (offset -1) * (offset - row), check - (offset - 1), by =offset - 1)),
+        "nw" = rev(seq(check - (offset +1) * (row - 1), check - (offset +1), by = offset + 1))
+        )
+  out[out >0 & out <= MAX]
+}
+sum_occupied <- function(dirs, grid){
+
+  sum <- 0
+  for(dir in dirs){
+    sub <- grid[dir]
+    
+    if(any(sub != ".")){
+      first <-  sub[min(which(sub %in% c("#", "L")))]
+      
+      sum <- sum + (first == "#")
+    }
+  }
+  sum
+}
+
+
+```
+
+
+
+```{r}
+update_grid2 <- function(grid, prev = NULL, checks){
+  #browser()
+  
+  #base case: no change
+  if (identical(grid, prev)){
+    return(sum(grid == "#"))
+  }
+  prev <- grid
+  empty <- which(grid == "L")
+  seated <- which(grid == "#")
+  
+  # Get # of adjacents occupied
+  surrounds <- map(checks, ~sum_occupied(.x, grid = grid))
+  # Match current seated and empties to positions fulfilling criteria
+  new_empty <- seated[which(seated %in% as.numeric(names(surrounds[surrounds >=5])))]
+  new_seated <- empty[which(empty %in% as.numeric(names(surrounds[surrounds ==0])))]
+  grid[new_empty] <- "L"
+  grid[new_seated] <- "#"
+  update_grid2(grid = grid, prev = prev, checks = checks)
+}
+
+ans2_checks <- map(checks, get_directions, offset = nrow(grid), MAX = nrow(grid) * ncol(grid))
+ans2 <- update_grid2(grid, checks = ans2_checks)
+```
+
+
+# Day 14
+```{r, eval = FALSE, in}
+
+
+input <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input18.txt")
+
+library(tidyverse)
+library(rlang)
+elf_math <- function(math){
+  
+  `/` <- function(lhs, rhs){
+    lhs + rhs
+  }
+  exp <- str_replace_all(math, "\\+", "/") %>% parse_expr()
+  
+  eval(exp)
+}
+
+elf_math2 <- function(math){
+  exp <- str_replace_all(math, c("\\+"= "/", "\\*"="-")) %>% parse_expr()
+  
+  `/` <- function(lhs, rhs){
+    lhs + rhs
+  }
+  `-` <- function(lhs, rhs){
+    lhs * rhs
+  }
+  
+  eval(exp)
+}
+
+ans <- map_dbl(input, elf_math) %>% sum()
+ans2 <- map_dbl(input, elf_math2) %>% sum()
+```
+
+# Day 16
+
+```{r}
+inpt <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input16.txt") %>% unlist()
+splits <- which(inpt == "")
+
+
+extract_ranges <- function(inpt){
+  #browser()
+  fields <- str_extract_all(inpt,"[a-z\\s]+(?=\\:)")
+  ranges <- str_match_all(inpt, "(\\d+-\\d+)") %>% 
+    map(~`[`(.x, 1:2))
+  
+ out <- map(ranges, ~str_split(.x, "-") %>% map(as.numeric)) %>%
+        map_depth(2, ~seq(.x[1], .x[2])) %>% 
+    map(reduce, c) %>%
+   set_names(fields)
+ out
+
+}
+
+validate_tickets <- function(ticket,ranges){
+
+  sum <- 0
+  for(val in ticket){
+    if(!any(map_lgl(ranges, ~`%in%`(val, .x) %>% any))){
+      sum <- sum + ifelse(val ==0, 1, val)
+    }
+    
+  }
+  sum
+}
+valid <- inpt[seq(1, splits[1]-1)]
+mine <- inpt[seq(splits[1] +1, splits[2] -1)]
+
+others <- inpt[seq(splits[2] +1, length(inpt))] %>% 
+  {.[str_detect(., "\\d")]} %>% 
+  map(str_extract_all, "\\d+") %>% 
+  map(unlist) %>% 
+  map_depth(2, as.numeric) %>% 
+  map(reduce, c)
+
+ranges <- extract_ranges(valid)
+
+invalids <- map_dbl(others,validate_tickets, ranges)
+ans1 <- sum(invalids) #no longer right - zero matching
+
+others <- others[invalids ==0]
+others <- others %>%  {setNames(do.call(rbind.data.frame, .), nm = paste0("f", 1:20))}
+
+check_field <- function(col){
+  names(ranges)[map_lgl(ranges, ~ifelse(sum(is.na(match(col, .x))) == 0, TRUE, FALSE))]
+}
+
+reducer <- others
+matches <- setNames(rep(NA_character_, 20), nm = paste0("f", 1:20))
+ids <- map(reducer, check_field)
+while(sum(is.na(matches)) >0){
+  ided <- ids %>% keep(~length(.x) == 1) %>% 
+    as_vector()
+  
+  ids[[names(ided)]] <- NULL
+  ids <- ids %>% map(~discard(.x, .x ==ided))
+  #Remove matched fields, add to match vector
+  matches[which(names(matches) %in% names(ided))] <- ided
+}
+
+mine <-  mine[-1] %>% str_split(",") %>% 
+  unlist() %>% 
+  as.numeric()
+
+ans2 <- mine[str_detect(matches, "departure")] %>% 
+  reduce(`*`)
+ans2
+
+```
+
+# Day 21
+```{r}
+
+input <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input21.txt") %>% 
+  tibble(temp = .) %>% 
+  separate(temp, into = c("ingredient", "allergy"), sep = "\\s(?=\\()")%>% 
+  mutate(allergy = str_remove_all(allergy, "\\(contains|,|\\)$") %>%
+           str_trim(.)) %>% 
+  mutate(across(everything(), ~str_split(.x, "\\s"))) %>% 
+  mutate(across(everything(), set_names, nm = 1:36)) %>% 
+  {map2_dfr(.$ingredient, .$allergy, ~expand.grid(ingred = .x, allerg = .y), .id = "grp")} %>% 
+  arrange(grp) %>% 
+  group_by(grp) %>% 
+  mutate(contained = n_distinct(allerg)) %>%
+  ungroup() %>% 
+  mutate(across(c(ingred, allerg), as.character))
+
+
+food_allerg <- input %>% group_by(ingred) %>% distinct(allerg, .keep_all = TRUE)
+
+single_grps <- input %>% filter(contained ==1) %>% 
+  distinct(grp, allerg)
+
+mult_groups <- anti_join(input, single_grps, by = "grp") %>% 
+  distinct(grp, allerg)
+
+ingreds <- unique(input$ingred)
+grp_allerg <- input %>% group_by(grp) %>% 
+  distinct(allerg, .keep_all = TRUE) %>% 
+  select(grp, allerg) %>% 
+  split(.$allerg)
+
+definites <- input %>% group_by(ingred, allerg) %>% filter(setequal(pluck(grp_allerg, unique(allerg))[["grp"]], grp)) %>% 
+  distinct(ingred, allerg) %>% 
+  ungroup()
+
+elims <- setdiff(ingreds, definites$ingred)
+
+ans1 <- input %>% distinct(grp, ingred) %>% filter(ingred %in% elims) %>% nrow()
+
+
+reduced <- definites
+while(n_distinct(reduced$ingred)<nrow(reduced)){
+ solved <- reduced %>% group_by(ingred) %>% filter(n()==1)
+ reduced <- reduced %>% anti_join(solved, by = "allerg") %>% 
+   add_row(solved)
+}
+
+ans2 <- reduced %>% arrange(allerg) %>% 
+  pull(ingred) %>% 
+  paste(collapse = ", ")
+
+
+
+
+
+```
+
+
+# Day 22
+```{r}
+raw <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input22.txt") 
+p1 <- raw[seq(1, which(raw == ""))] %>% as.numeric() %>% 
+  {.[!is.na(.)]}
+p2 <- raw[seq(which(raw == "Player 2:"), length(raw))] %>% as.numeric() %>% 
+  {.[!is.na(.)]}
+
+mulitplier <- seq((length(p1) + length(p2)), 1)
+crabcom <- function(p1 = p1, p2 = p2, states = list(c(p1, ";", p2) %>% reduce(paste0)), counter = 0){
+  while(length(p1)>0 &length(p2) > 0){
+    #browser()
+    p1_card <- p1[1]
+    p2_card <- p2[1]
+    # print("-------")
+    # print(paste("Round", counter +1))
+    # print(paste("Player 1 plays", p1_card))
+    # print(paste("Player 2 plays", p2_card))
+    #Exit early if repeated state
+    if(sum(c(p1, ";", p2) %>% reduce(paste0) == states) > 1){
+      print("Repeated game state")
+      winner <-  "p1"
+      if(sys.nframe()==1){
+        return(eval(sym(winner)))
+      }
+      return(winner)
+      #Trigger recursion
+    }else if(length(p1)- 1 >= p1_card & length(p2)-1 >= p2_card){
+      #print(paste("RECURSIVE ROUND at level", sys.nframe()+1, "!"))
+      winner <- crabcom(p1 = p1[seq(2, p1_card+1)], p2 = p2[seq(2, p2_card+1)])
+      #Base case: card comparison
+    }else{
+      winner <- ifelse(p1_card > p2_card, "p1", "p2")
+    } 
+    #Assign cards
+    if(winner=="p1"){
+      p1 <- c(p1[seq(2, length(p1))]%>% {.[!is.na(.)]}, p1_card, p2_card)
+      p2 <- p2[-1]
+    }else{
+      p2 <- c(p2[seq(2, length(p2))]%>% {.[!is.na(.)]}, p2_card, p1_card)
+      p1 <- p1[-1]
+    }
+    #Updata game state
+    counter <- counter + 1
+    states <- append(states, c(p1, ";", p2) %>% reduce(paste0))
+    
+    
+    #Check for game end
+    if(length(p1) ==0|length(p2)==0){
+      #Return deck for final exit
+      if(sys.nframe() ==1){
+        print(paste("The overall winner is", winner))
+        return(eval(sym(winner)))
+      }
+      return(winner) 
+    }
+  } 
+}
+
+test_deck <- crabcom(p1= c(9,2,6,3,1), p2 = c(5,8,4,7,10))
+winner_deck <- crabcom(p1, p2)
+res <- (winner_deck * multiplier) %>% sum()
+
+```
+
+# Day 24
+```{r}
+
+
+parse_directions <- function(stri){
+  #browser()
+  out <- stri %>%  str_replace_all("(?<=[^ns]|\\b)(e|w)", ";\\1;") %>% 
+  str_remove_all("^;|;(?=;)|;$") %>% 
+  str_split(";") %>% 
+  unlist() %>% 
+  str_replace_all("(?=<|ne|nw|sw|se)(nw|ne|sw|se)(?!$)", "\\1;") %>% 
+  str_split(";") %>% 
+  unlist()
+  out
+}
+dirs <- map(input, parse_directions) %>% 
+  set_names(seq_along(.))
+
+coord <- function(vec){
+  
+  out <- map(vec, function(el){
+    switch(el, e = c(1, -1,0),
+           w = c(-1,1,0),
+           ne = c(1,0,-1),
+           se = c(0,-1,1),
+           sw = c(-1,0, 1),
+           nw = c(0, 1, -1))
+  }) %>% reduce(`+`) %>% 
+    set_names(c("X", "Y", "Z"))
+  out
+}
+
+coords <- map(dirs, coord) %>% 
+  enframe( name= "ID", value = "Value") %>% 
+  unnest_wider(col = Value)
+
+ans <- coords %>% 
+  unite(col = Group, X, Y, Z, sep =",") %>% 
+  group_by(Group) %>% 
+  filter(n() %% 2 != 0) %>% 
+  n_groups()
+
+```
+
+```{r}
+input <- read_lines("C:/Users/heslinr1/Documents/Software/Misc/advent2020/input24.txt")
+dirs <- map(input, parse_directions) %>% 
+  set_names(seq_along(.))
+
+init <- map(dirs, coord) %>% 
+  enframe( name= "ID", value = "Value") %>% 
+  unnest_wider(col = Value)
+
+init <- coords %>% 
+  group_by(X, Y,Z) %>% 
+  mutate(color = factor(if_else(n() %% 2 == 1, "black", "white"))) %>% 
+  ungroup() %>% 
+  distinct(X,Y,Z, .keep_all = TRUE) %>% select(-ID) 
+
+
+summands <- list(c(1, -1,0),
+           c(-1,1,0),
+           c(1,0,-1),
+           c(0,-1,1),
+           c(-1,0, 1),
+           c(0, 1, -1))
+
+get_news <- function(tile, grid){
+ browser()
+  suppressWarnings(map2_dfr(list(tile), summands, `+`) %>% 
+    mutate(color = "white") %>% 
+    anti_join(grid, by = c("X", "Y", "Z", "color")))
+  
+}
+
+# Given a 2-level factor, sqap all values from one level to the other
+fct_swap <- function(fct){
+  
+lv1 <- levels(fct)[1]
+lv2 <- levels(fct)[2]
+out <- factor(ifelse(fct == lv1, lv2, lv1), levels = levels(fct))
+out
+
+}
+check_neighbors <- function(tile, grid){
+  #browser()
+  # coutn black neighbors in gri
+  blacks <- map2_dfr(list(tile[,-4]), summands, `+`) %>% 
+    inner_join(grid, by = c("X", "Y", "Z"))%>%
+    {sum(.$color == "black")}
+  #flip if meet condition
+  (tile$color == "black" & blacks != 1) | (tile$color == "white" & blacks  ==2)
+  
+}
+
+simulate_game <- function(grid, iter = 0){
+  #browser()
+  news <- grid %>% rownames_to_column() %>% split(.$rowname) %>% map(get_news, grid) %>%
+    bind_rows() %>%
+    distinct(.keep_all = TRUE)
+  grid <- rbind(grid, news)
+  
+  flips <- which(map(seq(1, nrow(grid)), ~`[`(grid, .x,)) %>%
+    map_lgl(check_neighbors, grid))
+  grid$color[flips] <- fct_swap(grid$color)[flips]
+    
+  iter <- iter +1 
+  print(iter)
+  print(paste("blacks=", sum(grid$color=="black")))
+  if(iter == 100){
+    return(sum(grid$color == "black"))
+  }
+  simulate_game(grid = grid, iter = iter)
+}
+
+edges <- grid %>% filter(edge) %>% 
+  select(-edge) %>% 
+  reduce(c)
+
+simulate_game(init)
+
+
+```
+
+
+# Day 25
+
+```{r}
+key_trans <- function(val=1, subj_num, loop_size){
+  
+    divisor <- 20201227
+    out <- rep(NA_real_, loop_size)
+  for (i in seq_len(loop_size)){
+    val <- (val * subj_num) %% divisor
+    out[i] <- val
+  }
+  out
+}
+
+door <- 11349501
+card <- 5107328
+
+ans1 <- key_trans(subj_num = 7, loop_size = 10000000) 
+door_loop <- which(ans1==door)
+card_loop <- which(ans1==card)
+
+ans <- key_trans(subj_num = card, loop_size = door_loop) %>% last()
+```
+
+
+

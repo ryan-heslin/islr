@@ -1,0 +1,265 @@
+---
+title: "ISLR Chapter 3 Exercises"
+author: "Ryan Heslin"
+date: "2/16/21"
+output: pdf_document
+---
+
+# Conceptual
+
+Linear regression really uses linear combination of covariance matrix to project - which is why perfect fit is achievable only with perfect correlation.
+
+## 1. 
+
+The null hypothesis for a regression coefficient is that the predictor has no linear relationship with he response. In this table, TV and radio ads have such a relationship, but newspaper adds do not becasue the coefficient's confidence interval contains 0. $\beta_0$ is also significant, meaning the average effect of _omitted_ variables is significant as well (since $E(Y)=0$)
+
+##2.
+
+KNN classification assigns each observation to the most common class among the $K$ nearest points. the. KNN regression _predicts_ for each observation the mean of the $K$ closest observations. 
+## 3.
+
+The model here is \[Y=50+20X_1+.07X_2+35X_3+.01X_1X_2-10X_1X_3\]
+
+a. i., ii. It depends; see below.
+
+iii. True.
+Females outearn males only if their GPA is below 3.5:
+\[
+35 > 10X_2\\
+X_2 <3.5
+\]
+So a male with GPA above 3.5 beats the value of the female indicator variable.  
+
+iv. False by the above
+
+b. $50+20(4.0)+.07(110)+35(1)+.01(4)(110))-10(4)(1)=137.1$
+That comes to \$137,100.
+
+c. False. Since this is an interaction coefficient, it refers to the product of the units of GPA and IQ, not the individual scales.
+
+## 4.
+
+Even if the relationship is linear, the cubic model will have lower training RSS because adding information to the model will always improve it, even if it is irrelevant to the true relationship.
+b. Test RSS will most likely increase because the model is biased; it does not reflect the true form of the function.
+
+c, d. The more flexible cubic fit would outperform a truly nonlinear $f(x)$ on both test and training sets, though the improvement might be marginal depending on the form of the function.
+
+# Applied
+
+## 11. 
+This problem concerns no-intercept regression.
+
+```{r}
+set.seed(1)
+library(tidyverse)
+
+x <- rnorm(100)
+y <- 2*x + rnorm(100)
+
+mod <- lm(y~x-1)
+summary(mod)
+```
+
+We see the model estimates the correct coefficient with high probability.
+
+b.
+```{r}
+mod2 <- lm(x ~y-1)
+summary(mod2)
+```
+
+c. The coefficient is .4, not the correct .5 (as $Y=2X+\epsilon$. The models have the same $t$ values and $R^2$, though standard error is different (as the coefficients differ)
+
+The numerator expresses $\beta$, the denominator its standard error. 
+
+d. This was a fun proof. I'll simplify the sum notation. First clean up the fraction:
+
+\[\frac{\sum{x_iy_i}\sqrt{(n-1)\sum{x_i^2}}}
+{\sum{x_i^2}\sqrt{\sum{(y_i-x_i\beta)^2}}}\]
+
+then cancel the $\sum{x_i^2}$:
+
+\[\frac{\sum{x_iy_i}\sqrt{(n-1)}}
+{\sqrt{\sum{x_i^2}\sum{(y_i-x_i\beta)^2}}}\]
+
+then complete the square:
+
+\[\frac{\sum{x_iy_i}\sqrt{(n-1)}}
+{\sqrt{\sum{x_i^2}(\sum{y_i^2}+\sum{x_i{\beta^2}}-\sum{2x_iy_i{\beta}})}}\]
+
+and bring out the constants with respect to the sums. Substituting the definition of beta makes everything cancel nicely, leaving:
+
+\[\frac{\sum{x_iy_i}\sqrt{(n-1)}}
+{\sqrt{\sum{x_i^2}\sum{y_i^2}-\sum{x_iy_i}}}\]
+
+e. From the equation, it is obvious by the commutative property of multiplication that substituting $x$ for $y$ gives the same result.
+
+f. From the model summaries above, the t-values are identical.
+
+## 12.
+
+Here we are asked to continue no-intercept regression.
+
+a. For simple no-intercept regression, 
+\[\beta=\frac{\sum^n_{i=1}x_iy_i}{\sum^n_{i=1}xi^2}\]
+
+The denominator is the same whether we regress $y$ on $x$ or vice versa, and by wrapping the values we see that:
+
+\[\beta=\frac{\sum^n_{i=1}y_ix_i}{\sum^n_{i=1}yi^2}\]
+Obviously these two are only equal if $x$ and $y$ have equal sums of squares.
+
+b. In almost every real case this property will not hold. Here randomness prevents the coefficients from quite matching
+
+```{r}
+y <- rnorm(100)
+x <- rnorm(100)
+
+lm(y~x-1)
+lm(x~y-1)
+```
+c. But if the vectors were opposite-signed...
+```{r}
+y <- rnorm(100)
+x <- -y
+sum((x-mean(x))^2) == sum((y-mean(y))^2)
+lm(x~y-1)
+lm(y~x-1)
+```
+
+## 13.
+
+a.
+```{r}
+x <- rnorm(100)
+eps <- rnorm(100, sd = .25)
+y <- -1 +.5*x +eps
+```
+
+In this implied model, $\beta_0=-1$ and $\beta_1=.5$.
+
+```{r}
+tibble(x, y) %>% 
+  ggplot(aes(x,y))+
+  geom_point() +
+  geom_hline(yintercept = mean(y)) +
+  geom_smooth(method = "lm")
+```
+
+e. Fitting a model, we see that the estimates are very close
+
+```{r}
+mod <- lm(y~x)
+summary(mod)
+```
+
+g. Now we add a polynomial model:
+
+```{r}
+mod_poly <- lm(y~poly(x, degree = 2))
+summary(mod_poly)
+```
+The coefficients are completely different, but the fit has hardly changed, since the true relationship is linear.
+
+```{r}
+x <- rnorm(100)
+eps <- rnorm(100, sd = .1)
+y <- -1 +.5*x +eps
+params <- map(c(.1, .15, .4), ~tibble(x = rnorm(100), y = -1 + x + rnorm(100, sd = .x))) %>% 
+  transpose() %>% 
+  as_tibble()
+
+mods <- pmap(params, ~list(linear = lm(.y ~.x),
+                           poly = lm(.y~poly(.x,2))))
+
+frame <- map_depth(mods, 2, broom::glance) %>% map(bind_rows, .id = "Type") %>% bind_rows(.id = "Subset")
+
+
+
+```
+
+As expected, R squared declines as the variance increases,a nd confidence intervals greatly widen.
+
+```{r}
+map_depth(mods, 2, confint)
+```
+
+## 14.
+
+Here we simulate the model
+
+\[Y=2+2X_1+0.3X_2+\epsilon\]
+
+
+```{r}
+dat <- tibble(x1=runif(100), x2= .5 *x1 + (rnorm(100)/10), y = 2 +2 *x1 +.3*x2 + rnorm(100) )
+```
+
+b.
+
+$X_1$ and $X_2$ are strongly correlated, since $X_2$ is just a multiple of $X_1$ with noise added. For that reason, $X_1$ has more correlation with $Y$.
+```{r}
+dat %>% ggplot(aes(x1, x2)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+cor(dat)
+```
+
+Fitting multiple models, we see the first reduces $X_1$ but boosts $X_2$, , the second gets $X_1$ about right but overstates the intercept, and the second gets the intercept about right but grossly overstates $x_2$. This is consistent with both variables being correlated with each other but only $X_1$ strongly correlated with $Y$. 
+```{r}
+mods <- list(both = lm(data = dat, y ~.),
+             x1 <- lm(data = dat, y~ x1),
+             x2 = lm(data = dat, y~x2))
+
+map(mods, summary)
+```
+
+g. This observation was tragically mismeasured. The $X_1$ point has higher leverage because $X_2$ comes partially from a normal rather than a uniform distribution, making extreme values less likely. We refit the models and see that $X_2$ now has a negative coefficient in the two-variable model, while the coefficients for the two single-variable models are inflated. The high-leverage point increases TSS and thus the magnitude of the betas needed to project the data.
+```{r}
+dat <- add_row(dat, x1 =.1, x2 = .8, y = 6)
+cor(dat)
+mods <- map(mods, update)
+
+map(mods, summary)
+```
+
+## 15.
+We are asked to predict crime in Boston. Some more quasiquotation silliness.
+
+a. It turns out only crim is a nonsiginficant predictor.
+```{r}
+boston <- MASS::Boston
+
+preds <- boston %>% select(-crim) %>% 
+  names() %>% 
+  map(as.symbol)
+
+call <- quote(lm(data =boston))
+
+bos_mods <- map2(preds, list(call), function(.x, .y){
+  .y$formula <- bquote(crim ~ .(.x))
+  eval(.y)
+})
+```
+
+b. But when we fit a model on the whole data, only a few predictors are significant, dis and rad.
+```{r}
+mod2 <- lm(data = boston, crim ~ .)
+summary(mod2)
+```
+c. We see a tight cluster of points with just one coef, zn, clearly differentiated. This is the classic thin ellipse of multicollinearity.
+```{r}
+tibble(single = map(bos_mods, broom::tidy) %>% 
+         map_dbl(~`[`(.x, 2, "estimate", drop = TRUE) %>% unlist()), mult = broom::tidy(mod2)$estimate[-1], pred = broom::tidy(mod2)$term[-1]) %>% 
+  ggplot(aes(x =single, y =mult, color = factor(pred))) + geom_point()
+```
+
+d.
+```{r}
+map(names(boston %>% select(-c(chas, crim))), as.symbol) %>% 
+  map(~bquote(crim ~poly(.(.x), degree = 3))) %>% 
+  map(~lm(formula = .x, data = boston)) %>% 
+  map(summary)
+  
+```
+
+We see strong nonlinear relationships for zn, indus, dis, tax, and medv, most of which are measured on very different scales.

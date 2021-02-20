@@ -21,7 +21,7 @@ output: html_document
 11. How do GAMs handle smoothing splines and other non-OLS functions?
 # Overview
 
-This chapter discusses methods that attempt to balance interpretability with flexibility. The first four work only on one predictor. Local regressionc can generally be applied to a few predictors, and generalized additive models can work with any number.
+This chapter discusses methods that attempt to balance interpretability with flexibility. The first four work only on one predictor. Local regression can generally be applied to a few predictors, and generalized additive models can work with any number.
 
 They are:
 
@@ -65,7 +65,7 @@ wage %>% mutate(wage2 = ifelse(wage < 250, 0, 1)) %>%
  
  \[\hat{f}(x_0)= \beta_0 + \beta_1x_0+\beta_2x_0+\beta_3x_0+\beta_4x_0\]
  
-Each beta has its own estimated variance, and the covariance of the betas can also be estimated. For each value $x_n$, the corresponding variance of the estimator function ($Var(\hat{f}(x_0))$)) is the sqaure root of the dot product of the vector of predictor values ($(1, x_0, x_0^2$), etc.) for that point and the variances of the betas (1 for $\beta_0$). This is called pointwise standard error, which amounts to the variance of $\hat{f}(x_0)$, where $\hat{f}$ is essentially a random variable, for that particular value. The curve is fitted by computing it for each distinct $x_i$. It can be thought of as the standard error of $\hat{f}(X)$) for a given value of $X$, the way the SEM varies by $n$.
+Each beta has its own estimated variance, and the covariance of the betas can also be estimated. For each value $x_n$, the corresponding variance of the estimator function ($Var(\hat{f}(x_0))$)) is the square root of the dot product of the vector of predictor values ($(1, x_0, x_0^2$), etc.) for that point and the variances of the betas (1 for $\beta_0$). This is called pointwise standard error, which amounts to the variance of $\hat{f}(x_0)$, where $\hat{f}$ is essentially a random variable, for that particular value. The curve is fitted by computing it for each distinct $x_i$. It can be thought of as the standard error of $\hat{f}(X)$) for a given value of $X$, the way the SEM varies by $n$.
 
 # Step Functions
 
@@ -214,7 +214,7 @@ The main drawback is that the model is purely additive; interaction is impossibl
 Using the familiar logit expression, a qualitative GAM takes the form:
 
 
-\[log(\frac{p(X)}{1-p(X)})=\\beta_0+f_1(x_{i1})+f_2(x_{i2})+\dots+f_p(x_{io})+\epsilon_i\]
+\[\log(\frac{p(X)}{1-p(X)})=\beta_0+f_1(x_{i1})+f_2(x_{i2})+\dots+f_p(x_{io})+\epsilon_i\]
 
 The strengths, caveats, and interpretation guidelines discussed above still apply.
 

@@ -1,0 +1,36 @@
+The lambda calculus reduces all programs to functions applied to arguments. There are two core rules:
+
+1. The operations of functions are invisible outside them.
+2. Functions never change state.
+
+Lambda functions are written with two parts: the lambda and the name of the function followed by a period, then the body of the function. An exponential function that computes $x^y$ would be:
+
+\[\lambda.x,\lambda.{y}\,x^y\]
+
+All computations can be encoded using the lambda calculus. Computations consist of composing nested lambdas and evaluating them, inside out. _Lambdas evaluate as other lambdas_, and the expression is reduced until only a single lambda is left.
+
+Here is how we could define NOT from lambdas for TRUE and FALSE, arbitrarily selecting the opposite of two inputs:
+
+\[\lambda.x\,,\lambda.y\,x\\
+\lambda.x\,,\lambda.y\,y\]
+
+\[\lambda\,b.\,b\text{ FALSE TRUE}\]
+
+If we expand the definitions of TRUE and FALSE:
+
+\[\lambda.\,b\,\,b\,\lambda.x\,,\lambda.y\,x\,\lambda.x\,,\lambda.y\,y\]
+
+so if set $b$ as TRUE, it resolves to a function call
+\[\text{TRUE(FALSE TRUE)}\]
+
+We defined TRUE to choose the first of two inputs, so this returns FALSE, the opposite of TRUE.
+
+Logical AND would be:
+
+\[\lambda\,b.\,b\text{ TRUE FALSE}\]
+
+```{r}
+cat("fizz")
+cat("buzz")
+```
+

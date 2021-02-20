@@ -1,0 +1,387 @@
+
+
+## 1/11/21
+
+qnorm and pnorm are inverses such that qnorm(.975) = 1.96 and pnorm(1.96)=.975
+
+```{r}
+qnorm(.975)
+pnorm(1.96)
+```
+pmatch matches a single vector against another; unlike match, it ignores incommensurate lengths and counts a match wherever the vectors intersect.
+
+```{r}
+pmatch(c("cyl", "disp", "mpg"), colnames(mtcars))
+```
+
+You can set an xlim or ylim arg element to NA to represent the max or min of the corresponding data!
+
+
+For each index of the LHS vector, match gives the index of the first match in the RHS, NA if no match. So the output always has the input's length.
+```{r}
+match(c("a", "b", "d", "s", "s", "7"), letters)
+```
+
+Substitute has an undocumented feature of acting like enexprs:
+
+```{r}
+f <- function(...) as.list(substitute(...()))
+f(x = 1, y = 10 * z)
+```
+
+Be careful: Length-0 vectors, like NA's, defeat logical comparisons and pollute all they contact. Mitigate this using double Boolean operators
+
+```{r}
+
+v <- 5
+v | numeric(0)
+#but
+v > 3 || numeric(0)
+```
+There's a base replace function!
+```{r}
+replace(mtcars$cyl, which(mtcars$cyl ==6), 3)
+```
+
+seq_date does what you'd expect
+
+Unnest_longer is so useful. From someone better than me on Reddit:
+```{r}
+tibble(
+    date_1 = ymd("2018-11-15"),
+    date_2 = ymd("2021-01-15")
+) %>%
+    mutate(years = map2(date_1, date_2, ~ year(.x):year(.y))) %>%
+    unnest_longer(col = years)
+```
+
+There's a vectorized product?! And length!
+```{r}
+prod(1:10)
+lengths(mtcars)
+```
+You can use intersect with reduce
+
+Duplicated function checks for just that
+No reason you can't do this:
+
+```{r}
+rep(list(c(0,1)), 5)
+```
+
+
+## 1/17/21
+
+Repeat indices to stretch matrices or dataframes
+```{r}
+mtcars[, rep(1:ncol(mtcars), each = 3)]
+```
+
+## 1/18/21
+
+Ensym will convert strings to symbols but also handle symbols! Enquo doesn't, of course.
+
+rainbow takes an integer arg and returns that many unique colors:
+
+```{r}
+rainbow(999)
+```
+
+Use show.legend = FALSE to hid specific aesthetics from the legend and use override.aes to manually specify which appear.
+
+xtfrm gives a numeric vector that sorts in x's order
+
+```{r}
+xtfrm(letters)
+```
+
+## 1/19/21
+
+Time to finally learn mapply. This applies multiple sets of vector elements in parallel. So:
+
+```{r}
+mapply(rep, 1:7, 7:1)
+
+```
+
+feeds rep the x and each arguments.
+
+Vectorize functions as you go:
+
+```{r}
+mapply(rnorm, 1:5, 3)
+```
+outer applies a function to every combination of the elements of two vectors. To get the outer product of two vectors:
+```{r}
+outer(1:5, 10:7)
+```
+
+
+# 1/20/21
+Here's how to use names_pattern in pivot_longer
+```{r}
+
+anscombe %>% pivot_longer(everything(), names_to = c(".value", "num"), names_pattern = "(x|y)(\\d)", values_to = c("x", "y")) %>% 
+  ggplot(aes(x = x, y = y, col = num ))+
+  geom_point()
+```
+
+Pack is the inverse of chop, collapsing columns into list columns or vice versa
+```{r}
+df <- tibble(x1 = 1:3, x2 = 4:6, x3 = 7:9, y = 1:3)
+df
+df %>% pack(x = starts_with("x"))
+df %>% pack(x = c(x1, x2, x3), y = y)
+```
+
+# 1/21/20
+
+Either way logs the data itself; the difference is the scale.
+```{r}
+tibble(x = 1:10, y = (1:10)^2) %>% ggplot(aes(x = x, y = y)) + geom_point() + scale_y_log10()
+tibble(x = 1:10, y = (1:10)^2) %>% ggplot(aes(x = x, y = log(y))) + geom_point()
+```
+ggplot silently drops empty factor levels unless told not to
+```{r}
+ggplot(gss_cat, aes(race)) +
+  geom_bar() +
+  scale_x_discrete(drop = FALSE)
+```
+
+fct_relevel will move some levels to the front of the order. Fct_reorder2 orders by one numeri vector, then one value (by default the highest; typically the last seen on a plot) of another.
+
+```{r}
+fct_relevel(iris$Species, c("virginica"))
+levels(fct_reorder2(gss_cat$partyid, gss_cat$tvhours, gss_cat$age))
+```
+
+fct_recode changes label values individually. Multiple old level values may be mapped to a single new one.
+```{r}
+gss_cat %>%
+  mutate(partyid = fct_recode(partyid,
+    "Republican, strong"    = "Strong republican",
+    "Republican, weak"      = "Not str republican",
+    "Independent, near rep" = "Ind,near rep",
+    "Independent, near dem" = "Ind,near dem",
+    "Democrat, weak"        = "Not str democrat",
+    "Democrat, strong"      = "Strong democrat",
+    "Other"                 = "No answer",
+    "Other"                 = "Don't know",
+    "Other"                 = "Other party"
+  )) 
+```
+Vectorize your life already!
+```{r}
+f <- c("runif", "rnorm", "rpois")
+param <- list(
+  list(min = -1, max = 1), 
+  list(sd = 5), 
+  list(lambda = 10)
+)
+
+map2(f, param, ~exec(.x, !!!.y, n = 5))
+```
+
+
+# 1/22/20
+There's a new dplyr function to unpack rows with delimited values
+
+# 1/25/21
+
+The lift helpers change the domains of functions so you can work with different kinds of inputs.
+
+```{r}
+lift_dl(paste)(list(LETTERS))
+
+```
+# 1/27/21
+rapply can work as map_if:
+```{r}
+rapply(iris, classes = "factor", table)
+```
+= in most places is the same as <-, except where = acts as a token signaling named arguments, where the assignment takes place in the function: Compare:
+```{r}
+mean(x = 1:10)
+x
+mean(x <- 10)
+x
+```
+
+With c, the more general vector form always wins so NA's aren't introduced.
+
+dotall = TRUE lets the regex dot really match everything, newlines included.
+
+```{r}
+str_extract("I am an example\n", regex(".*", dotall = TRUE))
+```
+A regular string is easy to convert to a regex pattern
+# 1/28/21
+
+```{r}
+colours <- c("(?<=\\s|^)red", "orange", "yellow", "green", "blue", "purple")
+colour_match <- str_c(colours, collapse = "|")
+colour_match
+str_match("flickered", colour_match)
+str_match("red", colour_match)
+```
+
+str_c will also recycle the same way paste does:
+
+```{r}
+str_c("prefix-", c("a", "b", "c"), "-suffix")
+```
+
+str_sub has an assignment form:
+```{r}
+stri <- "viridis"
+str_sub(stri, 1, 3) <- "bat"
+stri
+
+# extract middle char
+middle <- function(stri){
+  pos <- (str_length(stri) %/% 2) + str_length(stri) %% 2
+  str_sub(stri, pos, pos)
+}
+
+middle("abcde")
+middle("abcd")
+```
+
+The reason for double-escaping is that the regex only uses the escape once, but the backslash needs to be escaped in the string used to create it.
+
+```{r}
+words <- stringr::words
+words[str_detect(words, "q[^u]")]
+words[str_detect(words, "(?<!c|^)ei")]
+british <- "(?<=[:alpha:])our"
+```
+
+```{r}
+words[str_detect(words, "[aeiou]{3}")]
+words[str_detect(words, "(?:[aeiou][^aeiou]){2,}")]
+words[str_detect(words, "^[aeiou].*?[^aeiou]$")]
+words[str_count(words, 
+```
+
+makeActiveBinding links a symbol to a function. Invoking the symbol calls without args, assigning symbol calls with args
+
+```{r}
+makeActiveBinding("funfun", fun = function(arg){
+  if(missing(arg)){
+    print("Missing")
+  }else{
+    print(arg)
+  }
+}, env = globalenv())
+funfun
+funfun = "hi"
+```
+ggplot_build lets you manipulate the plot's dataframes and panel layout (axes, etc.)
+```{r}
+{ggplot(mtcars, aes(x = wt, y = mpg)) +
+    geom_point()} %>% 
+  ggplot_build() %>%
+  .$data %>% 
+  .[[1]] %>% 
+  mutate(colour = ifelse(round(x) %% 2 ==1, "red", "green")) %>% 
+  ggplot(aes(x = x, y = y, colour = colour)) +
+  geom_point() +
+  scale_color_identity()
+
+```
+knit_expand() inlines R expressions into knitted code
+```{r}
+a <- 5
+knitr::knit_expand(text = "This is the value of a: {{a}}")
+```
+
+The two tidy dots behaviors are supporting list splicing and indirect assignment:
+
+```{r}
+var <- "cyl"
+vars <- list("a", "b")
+list2( !!var := "test", !!!vars)
+```
+Quosures support unevaluated := !
+```{r}
+test <- quos(`var` := mean(cyl))
+var <- quote(newvar)
+mtcars %>% mutate(!!get(names(test)) := mean(cyl))
+```
+
+## 2/3/21
+No peeking at the answers! Note that quoting wither the function (with quote marks) or the args delays evaluationo f args until after the call is constructed
+```{r}
+A <- 2
+f <- function(x) print(x^2)
+env <- new.env()
+assign("A", 10, envir = env)
+assign("f", f, envir = env)
+f <- function(x) print(x)
+f(A)                                      # 2
+do.call("f", list(A))                     # 2
+do.call("f", list(A), envir = env)        # 4
+do.call( f,  list(A), envir = env)        # 2
+do.call("f", list(quote(A)), envir = env) # 100
+do.call( f,  list(quote(A)), envir = env) # 10
+do.call("f", list(as.name("A")), envir = env) # 100
+
+eval(call("f", A))                      # 2
+eval(call("f", quote(A)))               # 2
+eval(call("f", A), envir = env)         # 4
+eval(call("f", quote(A)), envir = env)  # 100
+```
+
+Do.call always splices  alist of args; teh trick with dataframes is that they're already lists, so get spiced as separate args.
+
+2/8/21
+
+When does the magrittr dot fail? When, you idiot, you use the dot IN AN EXPRESSION. the dot gets piped to the frist arg, lookuped up by the expression that uses it. then it can't go to nested expressions.
+```{r}
+
+```
+
+## 2/13/21
+
+map_dfr fills absent columns with NA!
+
+```{r}
+map_dfr(list(list(a = 1, b=2), list(a =4, c= 7)), as_tibble)
+```
+
+
+# 2/16/21
+
+rlang::enquo0 will quote without evaluating forcing operators. Compare:
+```{r}
+x <- 1:10
+
+example <- function(arg){
+  library(rlang)
+  print(enquo(arg))
+  print(enquo0(arg))
+}
+
+example(expr(!!x+7))
+```
+
+
+
+## 2/19/21
+Rowwise lets you easily work with a dfof functions and args
+```{r}
+df <- tribble(
+   ~rng,     ~params,
+   "runif",  list(n = 10), 
+   "rnorm",  list(n = 20),
+   "rpois",  list(n = 10, lambda = 5),
+) %>%
+  rowwise()
+
+df %>% 
+  mutate(data = list(do.call(rng, params)))
+
+df %>% ungroup() %>% 
+  mutate(dat = pmap(., .f = ~do.call(what = ..1, args = ..2)))
+```
+
